@@ -133,6 +133,58 @@ def upsert_daily_stocks(daily_data):
             )
         conn.commit()
 
+def get_missing_dates(stock_code, days=60):
+    """특정 종목의 최근 N영업일 중 DB에 없는 날짜 리스트 반환"""
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT DISTINCT date FROM DailyStocks WHERE stock_code = ? ORDER BY date DESC LIMIT ?", (stock_code, days))
+        existing_dates = set(row[0] for row in cursor.fetchall())
+    # pykrx로 최근 N영업일 구하기
+    today = datetime.now().strftime('%Y%m%d')
+    df = stock.get_market_ohlcv_by_date((datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d'), today, stock_code)
+    all_dates = [d.strftime('%Y-%m-%d') for d in df.index]
+    missing = [d for d in all_dates if d not in existing_dates]
+    return missing
+
+def get_trading_value_from_row(row):
+    # 다양한 컬럼명에 대응
+    for col in ['거래대금', '거래대금(원)', 'VALUE']:
+        if col in row:
+            return int(row[col])
+    return 0
+
+def fill_missing_history(days=60):
+    """전체 종목에 대해 최근 N영업일 중 DB에 없는 일별 시세를 pykrx로 보충 저장"""
+    logger.info(f"[백필] 최근 {days}영업일 누락분 보충 시작")
+    with sqlite3.connect(DB_PATH) as conn:
+        codes = [row[0] for row in conn.execute("SELECT stock_code FROM Stocks").fetchall()]
+    for code in codes:
+        missing_dates = get_missing_dates(code, days)
+        if not missing_dates:
+            continue
+        today = datetime.now().strftime('%Y%m%d')
+        df = stock.get_market_ohlcv_by_date((datetime.now() - timedelta(days=days*2)).strftime('%Y%m%d'), today, code)
+        for date in missing_dates:
+            if date not in df.index.strftime('%Y-%m-%d'):
+                continue
+            row = df.loc[df.index.strftime('%Y-%m-%d') == date].iloc[0]
+            trading_value = get_trading_value_from_row(row)
+            d = {
+                'stock_code': code,
+                'date': date,
+                'open_price': int(row['시가']) if '시가' in row else 0,
+                'high_price': int(row['고가']) if '고가' in row else 0,
+                'low_price': int(row['저가']) if '저가' in row else 0,
+                'close_price': int(row['종가']) if '종가' in row else 0,
+                'volume': int(row['거래량']) if '거래량' in row else 0,
+                'trading_value': trading_value,
+                'market_cap': 0,  # 필요시 추가 조회
+                'price_change_ratio': float(row['등락률']) if '등락률' in row else 0.0
+            }
+            upsert_daily_stocks([d])
+        logger.info(f"{code}: {len(missing_dates)}개 날짜 보충 완료")
+    logger.info("[백필] 누락분 보충 완료")
+
 def main():
     # DB 초기화 (필요한 경우에만)
     init_db()
@@ -154,4 +206,7 @@ def main():
         logger.warning("수집된 일별 시세 데이터가 없습니다.")
 
 if __name__ == "__main__":
-    main()
+    if '--backfill' in sys.argv:
+        fill_missing_history(days=60)
+    else:
+        main()

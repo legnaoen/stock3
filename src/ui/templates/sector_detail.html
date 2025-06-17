@@ -47,6 +47,12 @@
 </head>
 <body>
     <div class="container">
+        <nav aria-label="breadcrumb" class="mt-3 mb-2">
+            <ol class="breadcrumb">
+                <li class="breadcrumb-item"><a href="#" onclick="goBackOrHome()">Home</a></li>
+                <li class="breadcrumb-item active" aria-current="page" id="breadcrumb-sector-name"></li>
+            </ol>
+        </nav>
         <div class="sector-info">
             <h2 id="sector-name" class="mb-4"></h2>
             <div class="summary">
@@ -64,7 +70,29 @@
                 </div>
             </div>
         </div>
-
+        <div class="d-flex align-items-center mb-2">
+            <label class="me-2">기간</label>
+            <select id="chartDays" class="form-select w-auto me-3">
+                <option value="30">30일</option>
+                <option value="60" selected>60일</option>
+                <option value="120">120일</option>
+            </select>
+            <label class="me-2">지표</label>
+            <select id="chartMetric" class="form-select w-auto me-3">
+                <option value="market_cap">시가총액</option>
+                <option value="trading_value">거래대금</option>
+                <option value="price_change_ratio">등락률</option>
+            </select>
+            <label class="me-2">표시 방식</label>
+            <select id="chartMode" class="form-select w-auto">
+                <option value="absolute" selected>절대값</option>
+                <option value="percent">변동률(%)</option>
+            </select>
+        </div>
+        <div style="background:#f8f9fa; border-radius:8px; padding:16px; margin-bottom:16px;">
+            <canvas id="sectorChart" height="80"></canvas>
+            <div id="chartMsg" class="mt-2 text-danger"></div>
+        </div>
         <div class="stock-list">
             <table id="stocks-table" class="table table-striped">
                 <thead>
@@ -86,6 +114,7 @@
     <script src="https://code.jquery.com/jquery-3.5.1.min.js"></script>
     <script src="https://cdn.datatables.net/1.10.24/js/jquery.dataTables.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
     <script>
         function formatNumber(num) {
             return new Intl.NumberFormat('ko-KR').format(num);
@@ -95,6 +124,15 @@
             const formatted = ratio.toFixed(2) + '%';
             const colorClass = ratio > 0 ? 'positive' : (ratio < 0 ? 'negative' : '');
             return `<span class="${colorClass}">${formatted}</span>`;
+        }
+
+        function goBackOrHome() {
+            // 이전 페이지가 있으면 뒤로, 없으면 메인
+            if(document.referrer && document.referrer !== location.href) {
+                history.back();
+            } else {
+                location.href = '/';
+            }
         }
 
         document.addEventListener('DOMContentLoaded', function() {
@@ -114,6 +152,7 @@
                     document.getElementById('up-stocks').textContent = info.up_stocks;
                     document.getElementById('down-stocks').textContent = info.down_stocks;
                     document.getElementById('change-ratio').innerHTML = formatChangeRatio(info.price_change_ratio);
+                    document.getElementById('breadcrumb-sector-name').textContent = info.name;
 
                     // 종목 테이블 초기화
                     $('#stocks-table').DataTable({
@@ -160,6 +199,67 @@
                     alert('데이터를 불러오는데 실패했습니다.');
                 });
         });
+
+        async function loadSectorChart() {
+            const urlParams = new URLSearchParams(window.location.search);
+            const type = urlParams.get('type');
+            const id = urlParams.get('id');
+            const days = document.getElementById('chartDays').value;
+            const metric = document.getElementById('chartMetric').value;
+            const mode = document.getElementById('chartMode').value;
+            const res = await fetch(`/api/sector/${type}/${id}/chart?days=${days}&metric=${metric}`);
+            const data = await res.json();
+            const ctx = document.getElementById('sectorChart').getContext('2d');
+            if(window.sectorChartObj) window.sectorChartObj.destroy();
+            let chartData, chartLabels, chartUnit = data.unit || '';
+            if(data.values && data.values.length > 1) {
+                chartLabels = data.dates;
+                if(mode === 'percent' && metric !== 'price_change_ratio') {
+                    // 기준일 대비 % 변동률로 변환
+                    const base = data.values[0];
+                    chartData = data.values.map(v => base ? ((v - base) / base * 100) : 0);
+                    chartUnit = '%';
+                } else {
+                    chartData = data.values;
+                }
+            } else {
+                chartData = Array(Number(days)).fill(null);
+                chartLabels = Array(Number(days)).fill('');
+            }
+            window.sectorChartObj = new Chart(ctx, {
+                type: 'line',
+                data: {
+                    labels: chartLabels,
+                    datasets: [{
+                        label: mode === 'percent' && metric !== 'price_change_ratio' ? (data.label + ' 변동률(%)') : (data.label || '차트'),
+                        data: chartData,
+                        borderColor: '#007bff',
+                        backgroundColor: 'rgba(0,123,255,0.1)',
+                        fill: true,
+                        tension: 0.2
+                    }]
+                },
+                options: {
+                    responsive: true,
+                    plugins: {
+                        legend: { display: true },
+                        tooltip: { enabled: true }
+                    },
+                    scales: {
+                        y: { title: { display: true, text: chartUnit } }
+                    }
+                }
+            });
+            if(!data.values || data.values.length < 2) {
+                document.getElementById('chartMsg').textContent = '차트 데이터가 부족합니다.';
+            } else {
+                document.getElementById('chartMsg').textContent = '';
+            }
+        }
+        document.getElementById('chartDays').addEventListener('change', loadSectorChart);
+        document.getElementById('chartMetric').addEventListener('change', loadSectorChart);
+        document.getElementById('chartMode').addEventListener('change', loadSectorChart);
+        document.addEventListener('DOMContentLoaded', loadSectorChart);
     </script>
 </body>
 </html> 

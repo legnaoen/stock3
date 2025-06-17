@@ -87,7 +87,7 @@ def get_sector_info(sector_type: str, sector_id: int, date: str = None) -> Dict:
         raise
 
 def get_sector_stocks(sector_type: str, sector_id: int, date: str = None) -> List[Dict]:
-    """테마/업종에 속한 종목 리스트와 상세 정보 조회"""
+    """테마/업종에 속한 종목 리스트와 상세 정보 조회 (주가 데이터가 없어도 종목은 항상 표시)"""
     if not date:
         date = get_today()
         
@@ -105,25 +105,25 @@ def get_sector_stocks(sector_type: str, sector_id: int, date: str = None) -> Lis
         d.market_cap
     FROM {sector_type}_stock_mapping m
     JOIN Stocks s ON m.stock_code = s.stock_code
-    JOIN DailyStocks d ON s.stock_code = d.stock_code
-    WHERE m.{sector_type}_id = ? AND d.date = ?
+    LEFT JOIN DailyStocks d ON s.stock_code = d.stock_code AND d.date = ?
+    WHERE m.{sector_type}_id = ?
     ORDER BY d.price_change_ratio DESC
     """
     
     try:
         with sqlite3.connect(DB_PATH) as conn:
             cursor = conn.cursor()
-            cursor.execute(query, (sector_id, date))
+            cursor.execute(query, (date, sector_id))
             rows = cursor.fetchall()
             
             return [{
                 'stock_code': row[0],
                 'stock_name': row[1],
-                'price_change_ratio': row[2],
-                'close_price': row[3],
-                'volume': row[4],
-                'trading_value': row[5],
-                'market_cap': row[6]
+                'price_change_ratio': row[2] if row[2] is not None else 0.0,
+                'close_price': row[3] if row[3] is not None else '-',
+                'volume': row[4] if row[4] is not None else '-',
+                'trading_value': row[5] if row[5] is not None else '-',
+                'market_cap': row[6] if row[6] is not None else '-'
             } for row in rows]
     except Exception as e:
         logger.error(f"Error getting sector stocks: {str(e)}")

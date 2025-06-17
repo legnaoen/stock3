@@ -1,4 +1,4 @@
-from flask import Flask, jsonify, render_template
+from flask import Flask, jsonify, render_template, request
 import sqlite3
 import os
 import sys
@@ -386,6 +386,36 @@ def refresh_full():
     threading.Thread(target=job).start()
     # 반환: 마지막 전체갱신일
     return jsonify({'last_full_refresh': last_full_refresh['date'] or '-'})
+
+@app.route('/api/sector/<sector_type>/<int:sector_id>/chart')
+def get_sector_chart(sector_type, sector_id):
+    days = int(request.args.get('days', 60))
+    metric = request.args.get('metric', 'market_cap')
+    metric_map = {
+        'market_cap': ('market_cap', '시가총액', '원'),
+        'trading_value': ('trading_value', '거래대금', '원'),
+        'price_change_ratio': ('price_change_ratio', '등락률', '%')
+    }
+    if metric not in metric_map:
+        return jsonify({'error': 'Invalid metric'}), 400
+    col, label, unit = metric_map[metric]
+    table = 'industry_daily_performance' if sector_type == 'industry' else 'theme_daily_performance'
+    id_col = 'industry_id' if sector_type == 'industry' else 'theme_id'
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        cursor = conn.cursor()
+        cursor.execute(f"""
+            SELECT date, {col} FROM {table}
+            WHERE {id_col} = ?
+            ORDER BY date DESC LIMIT ?
+        """, (sector_id, days))
+        rows = cursor.fetchall()[::-1]  # 날짜 오름차순
+    return jsonify({
+        'dates': [r[0] for r in rows],
+        'values': [r[1] for r in rows],
+        'metric': metric,
+        'label': label,
+        'unit': unit
+    })
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 
