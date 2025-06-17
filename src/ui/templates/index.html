@@ -73,6 +73,9 @@
             <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="tab" href="#surge">급등주</a>
             </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#rebound">저점반등주</a>
+            </li>
         </ul>
 
         <!-- 탭 내용 -->
@@ -141,6 +144,23 @@
                         </tr>
                     </thead>
                     <tbody id="surgeData"></tbody>
+                </table>
+            </div>
+
+            <!-- 저점반등주 탭 -->
+            <div class="tab-pane fade" id="rebound">
+                <table class="table table-hover">
+                    <thead>
+                        <tr>
+                            <th>종목명</th>
+                            <th>등락률</th>
+                            <th>반등률</th>
+                            <th>업종</th>
+                            <th>테마</th>
+                            <th class="text-right">5일평균 거래대금</th>
+                        </tr>
+                    </thead>
+                    <tbody id="reboundData"></tbody>
                 </table>
             </div>
         </div>
@@ -274,6 +294,39 @@
                 const target = e.target.getAttribute('href').substring(1);
                 loadData(target);
             });
+        });
+
+        // 저점반등주 데이터 로드
+        function loadReboundData() {
+            fetch('/api/performance/rebound')
+                .then(response => response.json())
+                .then(res => {
+                    const data = res.data || [];
+                    const tbody = document.getElementById('reboundData');
+                    tbody.innerHTML = '';
+                    if (data.length === 0) {
+                        tbody.innerHTML = '<tr><td colspan="6" class="text-center">데이터 없음</td></tr>';
+                        return;
+                    }
+                    data.forEach(row => {
+                        tbody.innerHTML += `
+                            <tr>
+                                <td>${row.name}</td>
+                                <td>${formatChangeRate(row.change_rate)}</td>
+                                <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
+                                <td>${row.industry || '-'}</td>
+                                <td>${row.theme || '-'}</td>
+                                <td class="text-right">${row.avg_trading_value_5d ? formatNumber(row.avg_trading_value_5d) : '-'}</td>
+                            </tr>
+                        `;
+                    });
+                });
+        }
+
+        // 탭 활성화 시 데이터 로드
+        document.addEventListener('DOMContentLoaded', function() {
+            // ... 기존 탭 이벤트 ...
+            document.querySelector('a[href="#rebound"]').addEventListener('show.bs.tab', loadReboundData);
         });
 
         // 초기 데이터 로드

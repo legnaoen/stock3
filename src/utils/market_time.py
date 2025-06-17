@@ -1,21 +1,27 @@
 from datetime import datetime, time, timedelta
 import pytz
+import sqlite3
+import os
 
 KST = pytz.timezone('Asia/Seoul')
 
 def get_market_date():
     """
-    장 운영일 기준 날짜 반환
-    - 08:30 이전: 전일
-    - 08:30 이후: 당일
+    DB에 실제 데이터가 존재하는 가장 최근 날짜(전일 등)를 반환.
+    사용자가 '빠른 새로고침' 등으로 오늘 데이터가 적재되기 전까지는 오늘로 넘어가지 않음.
     """
-    now = datetime.now(KST)
-    market_open = now.replace(hour=8, minute=30, second=0, microsecond=0)
-    
-    if now < market_open:
-        # 08:30 이전이면 전일 데이터 사용
-        return (now - timedelta(days=1)).strftime('%Y-%m-%d')
-    return now.strftime('%Y-%m-%d')
+    DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
+    try:
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT date FROM DailyStocks ORDER BY date DESC LIMIT 1")
+            row = cursor.fetchone()
+            if row and row[0]:
+                return row[0]
+    except Exception:
+        pass
+    # DB 조회 실패 시 fallback: 오늘 날짜
+    return datetime.now().strftime('%Y-%m-%d')
 
 def is_market_open():
     """

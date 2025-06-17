@@ -355,6 +355,90 @@ def get_surge_performance():
             'data': results
         })
 
+@app.route('/api/performance/rebound')
+def get_rebound_performance():
+    """
+    최근 60일 저점 대비 30% 이상 반등 + 5일 평균 거래대금 상위 30위 종목 추출
+    종목명, 등락률, 업종, 테마, 5일평균 거래대금 등 반환
+    """
+    date = get_market_date()
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        # 1. 60일 저점, 5일 평균 거래대금, 현재가, 등락률 계산
+        # 2. 60일 저점 대비 30% 이상 반등 종목 추출
+        # 3. 반등률 내림차순 정렬, 상위 30위
+        query = '''
+        WITH recent_prices AS (
+            SELECT stock_code, MIN(low_price) AS min_low_60d
+            FROM DailyStocks
+            WHERE date >= date(?, '-59 day') AND date <= ?
+            GROUP BY stock_code
+        ),
+        avg_trading_value AS (
+            SELECT stock_code, AVG(trading_value) AS avg_trading_value_5d
+            FROM DailyStocks
+            WHERE date >= date(?, '-4 day') AND date <= ?
+            GROUP BY stock_code
+        ),
+        today_price AS (
+            SELECT stock_code, close_price, low_price, price_change_ratio
+            FROM DailyStocks
+            WHERE date = ?
+        ),
+        joined AS (
+            SELECT s.stock_code, s.stock_name, t.close_price, t.price_change_ratio, r.min_low_60d, a.avg_trading_value_5d
+            FROM Stocks s
+            JOIN today_price t ON s.stock_code = t.stock_code
+            JOIN recent_prices r ON s.stock_code = r.stock_code
+            JOIN avg_trading_value a ON s.stock_code = a.stock_code
+            WHERE r.min_low_60d > 0 AND t.close_price IS NOT NULL AND t.close_price > 0
+        ),
+        rebound AS (
+            SELECT *,
+                ROUND((CAST(close_price AS FLOAT) - CAST(min_low_60d AS FLOAT)) / CAST(min_low_60d AS FLOAT) * 100, 2) AS rebound_rate
+            FROM joined
+            WHERE close_price >= min_low_60d * 1.3
+        ),
+        ranked AS (
+            SELECT *, ROW_NUMBER() OVER (ORDER BY rebound_rate DESC, avg_trading_value_5d DESC) AS rank
+            FROM rebound
+        )
+        SELECT r.stock_code, r.stock_name, r.close_price, r.price_change_ratio, r.rebound_rate, r.avg_trading_value_5d,
+               i.industry_name, IFNULL(t.themes, '')
+        FROM ranked r
+        LEFT JOIN (
+            SELECT ism.stock_code, im.industry_name
+            FROM industry_stock_mapping ism
+            JOIN industry_master im ON ism.industry_id = im.industry_id
+        ) i ON r.stock_code = i.stock_code
+        LEFT JOIN (
+            SELECT tsm.stock_code, GROUP_CONCAT(tm.theme_name) as themes
+            FROM theme_stock_mapping tsm
+            JOIN theme_master tm ON tsm.theme_id = tm.theme_id
+            GROUP BY tsm.stock_code
+        ) t ON r.stock_code = t.stock_code
+        WHERE r.rank <= 30
+        ORDER BY r.rebound_rate DESC, r.avg_trading_value_5d DESC
+        '''
+        cursor.execute(query, (date, date, date, date, date))
+        results = []
+        for row in cursor.fetchall():
+            results.append({
+                'stock_code': row[0],
+                'name': row[1],
+                'close_price': row[2],
+                'change_rate': row[3],
+                'rebound_rate': row[4],
+                'avg_trading_value_5d': row[5],
+                'industry': row[6] if row[6] else '',
+                'theme': row[7] if row[7] else ''
+            })
+        return jsonify({
+            'market_status': get_market_status(),
+            'date': date,
+            'data': results
+        })
+
 # 빠른 새로고침: krx_collector + analyzer
 @app.route('/api/refresh/quick', methods=['POST'])
 def refresh_quick():
