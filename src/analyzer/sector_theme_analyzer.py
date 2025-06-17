@@ -113,7 +113,7 @@ def get_industry_performance(date: str = None, save_to_db: bool = True) -> List[
         cursor.execute(query, (date, date))
         rows = cursor.fetchall()
         
-        for row in rows:
+        for rank, row in enumerate(rows, 1):  # 순위는 1부터 시작
             result = {
                 'id': row[0],
                 'name': row[1],
@@ -125,7 +125,8 @@ def get_industry_performance(date: str = None, save_to_db: bool = True) -> List[
                 'up_stocks': row[7],
                 'down_stocks': row[8],
                 'unchanged_stocks': row[9],
-                'leader_stocks': row[10]
+                'leader_stocks': row[10],
+                'rank': rank  # 순위 정보 추가
             }
             results.append(result)
             
@@ -134,9 +135,9 @@ def get_industry_performance(date: str = None, save_to_db: bool = True) -> List[
                     perf_conn.execute("""
                         INSERT OR REPLACE INTO industry_daily_performance
                         (industry_id, date, price_change_ratio, volume, market_cap, trading_value,
-                         leader_stock_codes)
-                        VALUES (?, ?, ?, ?, ?, ?, ?)
-                    """, (row[0], date, row[2], row[3], row[4], row[5], row[10]))
+                         leader_stock_codes, rank)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (row[0], date, row[2], row[3], row[4], row[5], row[10], rank))
     
     return results
 
@@ -207,19 +208,20 @@ def get_theme_performance(date: str = None, save_to_db: bool = True) -> List[Dic
         cursor.execute(query, (date, date))
         rows = cursor.fetchall()
         
-        for row in rows:
+        for rank, row in enumerate(rows, 1):  # 순위는 1부터 시작
             result = {
                 'id': row[0],
                 'name': row[1],
                 'change_rate': row[2],
-                'volume': row[3],
-                'market_cap': row[4],
-                'trading_value': row[5],
-                'total_stocks': row[6],
-                'up_stocks': row[7],
-                'down_stocks': row[8],
-                'unchanged_stocks': row[9],
-                'leader_stocks': row[10]
+                'volume': row[4],
+                'market_cap': row[5],
+                'trading_value': row[6],
+                'total_stocks': row[7],
+                'up_stocks': row[8],
+                'down_stocks': row[9],
+                'unchanged_stocks': row[10],
+                'leader_stocks': row[11],
+                'rank': rank  # 순위 정보 추가
             }
             results.append(result)
             
@@ -227,10 +229,10 @@ def get_theme_performance(date: str = None, save_to_db: bool = True) -> List[Dic
                 with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
                     perf_conn.execute("""
                         INSERT OR REPLACE INTO theme_daily_performance
-                        (theme_id, date, price_change_ratio, market_cap_weighted_ratio, volume, market_cap, trading_value,
-                         leader_stock_codes)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row[0], date, row[2], row[3], row[4], row[5], row[6], row[10]))
+                        (theme_id, date, price_change_ratio, market_cap_weighted_ratio, volume, market_cap, 
+                         trading_value, leader_stock_codes, rank)
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """, (row[0], date, row[2], row[3], row[4], row[5], row[6], row[11], rank))
     
     return results
 

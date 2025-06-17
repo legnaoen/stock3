@@ -293,6 +293,13 @@ update_daily_performance(date)
 
 ## 변경 이력
 
+### 2025-06-17
+- 업종과 테마의 등락률 순위 정보 추가
+  - theme_daily_performance와 industry_daily_performance 테이블에 rank 컬럼 추가
+  - 등락률 기준으로 순위 자동 계산 및 저장 기능 구현
+  - 업종은 시가총액 가중평균 등락률 기준, 테마는 단순평균 등락률 기준으로 순위 산출
+  - sector_theme_analyzer.py의 get_industry_performance()와 get_theme_performance() 함수에 순위 계산 로직 추가
+
 ### 2024-03-21 테마 등락률 계산 방식 변경
 - 변경 내용: 테마 등락률 계산을 시가총액 가중평균에서 단순 평균으로 변경
 - 변경 이유: 네이버 테마 지수와의 정합성 개선

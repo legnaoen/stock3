@@ -51,9 +51,11 @@
                     <span id="statusText">시장 상태: </span>
                     <span id="dateText">기준일: </span>
                 </div>
-                <button class="btn btn-primary refresh-button" onclick="refreshData()" id="refreshBtn">
-                    새로고침
-                </button>
+                <div>
+                    <button class="btn btn-primary refresh-button" id="quickRefreshBtn" onclick="refreshQuick()" title="주가/성과만 빠르게 갱신">빠른 새로고침</button>
+                    <button class="btn btn-secondary refresh-button" id="fullRefreshBtn" onclick="refreshFull()" title="테마/업종/주가/성과 전체 갱신">전체 데이터 갱신</button>
+                    <span id="lastFullRefresh" style="font-size:0.9em; color:#888; margin-left:10px;">(마지막 전체갱신: -)</span>
+                </div>
             </div>
         </div>
 
@@ -151,7 +153,8 @@
             const statusDiv = document.getElementById('marketStatus');
             const statusText = document.getElementById('statusText');
             const dateText = document.getElementById('dateText');
-            const refreshBtn = document.getElementById('refreshBtn');
+            const quickRefreshBtn = document.getElementById('quickRefreshBtn');
+            const fullRefreshBtn = document.getElementById('fullRefreshBtn');
             
             // 상태별 텍스트 및 스타일
             const statusMap = {
@@ -169,7 +172,8 @@
             dateText.textContent = `기준일: ${date}`;
             
             // 새로고침 버튼 상태
-            refreshBtn.disabled = status === 'CLOSED';
+            quickRefreshBtn.disabled = status === 'CLOSED';
+            fullRefreshBtn.disabled = status === 'CLOSED';
         }
 
         // 숫자 포맷팅
@@ -227,10 +231,41 @@
             }
         }
 
-        // 새로고침
-        function refreshData() {
-            const activeTab = document.querySelector('.tab-pane.active');
-            loadData(activeTab.id);
+        // 빠른 새로고침: 주가/성과만 갱신
+        async function refreshQuick() {
+            setLoading(true);
+            try {
+                await fetch('/api/refresh/quick', { method: 'POST' });
+                // 현재 탭 데이터만 다시 로드
+                const activeTab = document.querySelector('.tab-pane.active');
+                loadData(activeTab.id);
+            } catch (e) {
+                alert('빠른 새로고침 실패');
+            }
+            setLoading(false);
+        }
+
+        // 전체 데이터 갱신: 테마/업종/주가/성과 전체
+        async function refreshFull() {
+            setLoading(true);
+            try {
+                const res = await fetch('/api/refresh/full', { method: 'POST' });
+                const data = await res.json();
+                // 마지막 전체갱신일 표시
+                document.getElementById('lastFullRefresh').textContent = '(마지막 전체갱신: ' + data.last_full_refresh + ')';
+                // 현재 탭 데이터만 다시 로드
+                const activeTab = document.querySelector('.tab-pane.active');
+                loadData(activeTab.id);
+            } catch (e) {
+                alert('전체 데이터 갱신 실패');
+            }
+            setLoading(false);
+        }
+
+        // 로딩 표시 함수(간단)
+        function setLoading(isLoading) {
+            document.getElementById('quickRefreshBtn').disabled = isLoading;
+            document.getElementById('fullRefreshBtn').disabled = isLoading;
         }
 
         // 탭 변경 이벤트

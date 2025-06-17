@@ -2,6 +2,8 @@ from flask import Flask, jsonify, render_template
 import sqlite3
 import os
 import sys
+from datetime import datetime, timedelta
+import threading
 
 # Add src to Python path for imports
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
@@ -13,6 +15,10 @@ app.register_blueprint(sector_api)
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))
+
+# 전체 데이터 갱신 마지막 실행일 저장 (메모리, 운영시 DB/파일로 대체 가능)
+last_full_refresh = {'date': None}
+last_industry_refresh = {'date': None}
 
 @app.route('/')
 def index():
@@ -348,6 +354,38 @@ def get_surge_performance():
             'date': date,
             'data': results
         })
+
+# 빠른 새로고침: krx_collector + analyzer
+@app.route('/api/refresh/quick', methods=['POST'])
+def refresh_quick():
+    def job():
+        os.system('python3 -m src.collector.krx_collector')
+        os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    threading.Thread(target=job).start()
+    return '', 204
+
+# 전체 데이터 갱신: theme/industry/krx_collector + analyzer
+@app.route('/api/refresh/full', methods=['POST'])
+def refresh_full():
+    today = datetime.now().strftime('%Y-%m-%d')
+    now = datetime.now()
+    # 업종 갱신 제한 (한달 이내면 스킵)
+    do_industry = True
+    if last_industry_refresh['date']:
+        last = datetime.strptime(last_industry_refresh['date'], '%Y-%m-%d')
+        if (now - last).days < 30:
+            do_industry = False
+    def job():
+        os.system('python3 -m src.collector.theme_crawler')
+        if do_industry:
+            os.system('python3 -m src.collector.industry_crawler')
+            last_industry_refresh['date'] = today
+        os.system('python3 -m src.collector.krx_collector')
+        os.system('python3 -m src.analyzer.sector_theme_analyzer')
+        last_full_refresh['date'] = today
+    threading.Thread(target=job).start()
+    # 반환: 마지막 전체갱신일
+    return jsonify({'last_full_refresh': last_full_refresh['date'] or '-'})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

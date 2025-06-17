@@ -30,6 +30,7 @@ CREATE TABLE IF NOT EXISTS theme_daily_performance (
     market_cap BIGINT,  -- 테마 전체 시가총액
     trading_value BIGINT,  -- 테마 전체 거래대금
     leader_stock_codes TEXT,  -- 주도주 종목코드들 (콤마로 구분)
+    rank INTEGER,  -- 등락률 기준 순위
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (theme_id, date),
     FOREIGN KEY (theme_id) REFERENCES theme_master(theme_id)
@@ -67,6 +68,7 @@ CREATE TABLE IF NOT EXISTS industry_daily_performance (
     market_cap BIGINT,  -- 업종 전체 시가총액
     trading_value BIGINT,  -- 업종 전체 거래대금
     leader_stock_codes TEXT,  -- 시가총액 상위 종목코드들 (콤마로 구분)
+    rank INTEGER,  -- 등락률 기준 순위
     created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (industry_id, date),
     FOREIGN KEY (industry_id) REFERENCES industry_master(industry_id)
