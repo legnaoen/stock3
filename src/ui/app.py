@@ -9,7 +9,6 @@ import re
 from src.utils.market_time import get_market_date, is_market_open, get_market_status
 from src.api.sector_api import sector_api
 from src.collector.news_crawler import crawl_naver_news_for_stock
-import datetime
 
 app = Flask(__name__)
 app.register_blueprint(sector_api)
@@ -158,55 +157,79 @@ def get_mixed_performance():
 def get_industry_performance():
     """업종별 상위 30개 데이터"""
     date = get_market_date()
+    yesterday = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
     
     with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
         cursor = perf_conn.cursor()
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
         
         query = """
-        SELECT 'industry' as type,
-               m.industry_id as id,
-               m.industry_name as name,
-               i.price_change_ratio,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.industry_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.industry_id = m.industry_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio > 0
-               ) as up_stocks,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.industry_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.industry_id = m.industry_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio < 0
-               ) as down_stocks,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.industry_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.industry_id = m.industry_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio = 0
-               ) as unchanged_stocks,
-               i.market_cap,
-               i.trading_value,
-               i.leader_stock_codes
-        FROM industry_daily_performance i
-        JOIN (SELECT industry_id, industry_name FROM master.industry_master) m 
-             ON i.industry_id = m.industry_id
-        WHERE i.date = ?
-        ORDER BY i.price_change_ratio DESC
+        WITH today AS (
+            SELECT i.industry_id, i.price_change_ratio, i.rank,
+                   m.industry_name,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.industry_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.industry_id = m.industry_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio > 0
+                   ) as up_stocks,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.industry_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.industry_id = m.industry_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio < 0
+                   ) as down_stocks,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.industry_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.industry_id = m.industry_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio = 0
+                   ) as unchanged_stocks,
+                   i.market_cap,
+                   i.trading_value,
+                   i.leader_stock_codes
+            FROM industry_daily_performance i
+            JOIN master.industry_master m ON i.industry_id = m.industry_id
+            WHERE i.date = ?
+        ),
+        yesterday AS (
+            SELECT industry_id, rank
+            FROM industry_daily_performance
+            WHERE date = ?
+        )
+        SELECT 
+            'industry' as type,
+            t.industry_id as id,
+            t.industry_name as name,
+            t.price_change_ratio as change_rate,
+            t.up_stocks,
+            t.down_stocks,
+            t.unchanged_stocks,
+            t.market_cap,
+            t.trading_value,
+            t.leader_stock_codes,
+            t.rank as current_rank,
+            y.rank as prev_rank
+        FROM today t
+        LEFT JOIN yesterday y ON t.industry_id = y.industry_id
+        ORDER BY t.rank ASC
         LIMIT 30
         """
         
-        cursor.execute(query, (date, date, date, date))
+        cursor.execute(query, (date, date, date, date, yesterday))
         
         results = []
         for row in cursor.fetchall():
+            current_rank = row[10]
+            prev_rank = row[11]
+            rank_change = None if prev_rank is None else prev_rank - current_rank
+            
             results.append({
                 'type': row[0],
                 'id': row[1],
@@ -217,7 +240,13 @@ def get_industry_performance():
                 'unchanged_stocks': row[6],
                 'market_cap': row[7],
                 'trading_value': row[8],
-                'leader_stocks': row[9].split(',') if row[9] else []
+                'leader_stocks': row[9].split(',') if row[9] else [],
+                'rank': {
+                    'current': current_rank,
+                    'prev': prev_rank,
+                    'change': rank_change,
+                    'is_new': prev_rank is None
+                }
             })
         
         cursor.execute("DETACH DATABASE master")
@@ -232,55 +261,79 @@ def get_industry_performance():
 def get_theme_performance():
     """테마별 상위 30개 데이터"""
     date = get_market_date()
+    yesterday = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
     
     with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
         cursor = perf_conn.cursor()
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
         
         query = """
-        SELECT 'theme' as type,
-               m.theme_id as id,
-               m.theme_name as name,
-               t.price_change_ratio,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.theme_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.theme_id = m.theme_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio > 0
-               ) as up_stocks,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.theme_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.theme_id = m.theme_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio < 0
-               ) as down_stocks,
-               (
-                   SELECT COUNT(DISTINCT m2.stock_code)
-                   FROM master.theme_stock_mapping m2
-                   JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
-                   WHERE m2.theme_id = m.theme_id
-                   AND d2.date = ?
-                   AND d2.price_change_ratio = 0
-               ) as unchanged_stocks,
-               t.market_cap,
-               t.trading_value,
-               t.leader_stock_codes
-        FROM theme_daily_performance t
-        JOIN (SELECT theme_id, theme_name FROM master.theme_master) m 
-             ON t.theme_id = m.theme_id
-        WHERE t.date = ?
-        ORDER BY t.price_change_ratio DESC
+        WITH today AS (
+            SELECT t.theme_id, t.price_change_ratio, t.rank,
+                   m.theme_name,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.theme_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.theme_id = m.theme_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio > 0
+                   ) as up_stocks,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.theme_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.theme_id = m.theme_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio < 0
+                   ) as down_stocks,
+                   (
+                       SELECT COUNT(DISTINCT m2.stock_code)
+                       FROM master.theme_stock_mapping m2
+                       JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
+                       WHERE m2.theme_id = m.theme_id
+                       AND d2.date = ?
+                       AND d2.price_change_ratio = 0
+                   ) as unchanged_stocks,
+                   t.market_cap,
+                   t.trading_value,
+                   t.leader_stock_codes
+            FROM theme_daily_performance t
+            JOIN master.theme_master m ON t.theme_id = m.theme_id
+            WHERE t.date = ?
+        ),
+        yesterday AS (
+            SELECT theme_id, rank
+            FROM theme_daily_performance
+            WHERE date = ?
+        )
+        SELECT 
+            'theme' as type,
+            t.theme_id as id,
+            t.theme_name as name,
+            t.price_change_ratio as change_rate,
+            t.up_stocks,
+            t.down_stocks,
+            t.unchanged_stocks,
+            t.market_cap,
+            t.trading_value,
+            t.leader_stock_codes,
+            t.rank as current_rank,
+            y.rank as prev_rank
+        FROM today t
+        LEFT JOIN yesterday y ON t.theme_id = y.theme_id
+        ORDER BY t.rank ASC
         LIMIT 30
         """
         
-        cursor.execute(query, (date, date, date, date))
+        cursor.execute(query, (date, date, date, date, yesterday))
         
         results = []
         for row in cursor.fetchall():
+            current_rank = row[10]
+            prev_rank = row[11]
+            rank_change = None if prev_rank is None else prev_rank - current_rank
+            
             results.append({
                 'type': row[0],
                 'id': row[1],
@@ -291,7 +344,13 @@ def get_theme_performance():
                 'unchanged_stocks': row[6],
                 'market_cap': row[7],
                 'trading_value': row[8],
-                'leader_stocks': row[9].split(',') if row[9] else []
+                'leader_stocks': row[9].split(',') if row[9] else [],
+                'rank': {
+                    'current': current_rank,
+                    'prev': prev_rank,
+                    'change': rank_change,
+                    'is_new': prev_rank is None
+                }
             })
         
         cursor.execute("DETACH DATABASE master")

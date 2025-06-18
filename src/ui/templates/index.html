@@ -57,6 +57,27 @@
         .refresh-controls {
             gap: 10px;
         }
+
+        /* 순위 표시 스타일 */
+        .rank-number {
+            color: #000;
+            font-weight: bold;
+        }
+        .rank-change {
+            font-size: 0.9em;
+            margin-left: 4px;
+        }
+        .rank-change.up {
+            color: #dc3545;
+        }
+        .rank-change.down {
+            color: #0d6efd;
+        }
+        .rank-new {
+            color: #6c757d;
+            font-size: 0.85em;
+            margin-left: 4px;
+        }
     </style>
 </head>
 <body>
@@ -126,9 +147,10 @@
 
             <!-- 업종 탭 -->
             <div class="tab-pane fade" id="industry">
-                <table class="table table-hover">
+                <table class="table table-hover" id="industryTable">
                     <thead>
                         <tr>
+                            <th>순위</th>
                             <th>업종명</th>
                             <th>등락률</th>
                             <th>상승/하락</th>
@@ -143,9 +165,10 @@
 
             <!-- 테마 탭 -->
             <div class="tab-pane fade" id="theme">
-                <table class="table table-hover">
+                <table class="table table-hover" id="themeTable">
                     <thead>
                         <tr>
+                            <th>순위</th>
                             <th>테마명</th>
                             <th>등락률</th>
                             <th>상승/하락</th>
@@ -194,13 +217,11 @@
 
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
     <script>
-        // 시장 상태에 따른 UI 업데이트
+        // 시장 상태 업데이트
         function updateMarketStatus(status, date) {
             const statusDiv = document.getElementById('marketStatus');
             const statusText = document.getElementById('statusText');
             const dateText = document.getElementById('dateText');
-            const quickRefreshBtn = document.getElementById('quickRefreshBtn');
-            const fullRefreshBtn = document.getElementById('fullRefreshBtn');
             
             // 상태별 텍스트 및 스타일
             const statusMap = {
@@ -217,9 +238,9 @@
             statusText.textContent = `시장 상태: ${statusMap[status].text}`;
             dateText.textContent = `기준일: ${date}`;
             
-            // 새로고침 버튼 상태
-            quickRefreshBtn.disabled = status === 'CLOSED';
-            fullRefreshBtn.disabled = status === 'CLOSED';
+            // 버튼은 항상 활성화 상태 유지
+            document.getElementById('quickRefreshBtn').disabled = false;
+            document.getElementById('fullRefreshBtn').disabled = false;
         }
 
         // 숫자 포맷팅
@@ -308,11 +329,27 @@
             document.getElementById('fullRefreshBtn').disabled = isLoading;
         }
 
-        // 탭 변경 이벤트
+        // 탭 변경 이벤트 핸들러 수정
         document.querySelectorAll('a[data-bs-toggle="tab"]').forEach(tab => {
-            tab.addEventListener('shown.bs.tab', (e) => {
-                const target = e.target.getAttribute('href').substring(1);
-                loadData(target);
+            tab.addEventListener('shown.bs.tab', function (e) {
+                const targetId = e.target.getAttribute('href').substring(1);
+                switch (targetId) {
+                    case 'industry':
+                        loadIndustryData();
+                        break;
+                    case 'theme':
+                        loadThemeData();
+                        break;
+                    case 'mixed':
+                        loadMixedData();
+                        break;
+                    case 'surge':
+                        loadSurgeData();
+                        break;
+                    case 'rebound':
+                        loadReboundData();
+                        break;
+                }
             });
         });
 
@@ -343,14 +380,21 @@
                 });
         }
 
-        // 탭 활성화 시 데이터 로드
+        // 초기 데이터 로드
         document.addEventListener('DOMContentLoaded', function() {
-            // ... 기존 탭 이벤트 ...
-            document.querySelector('a[href="#rebound"]').addEventListener('show.bs.tab', loadReboundData);
+            loadMixedData();
+            
+            // 새로고침 버튼 이벤트 핸들러
             const themeRefreshBtn = document.getElementById('themeRefreshBtn');
             const industryRefreshBtn = document.getElementById('industryRefreshBtn');
-            if (themeRefreshBtn) themeRefreshBtn.addEventListener('click', function(e) { e.preventDefault(); refreshTheme(); });
-            if (industryRefreshBtn) industryRefreshBtn.addEventListener('click', function(e) { e.preventDefault(); refreshIndustry(); });
+            if (themeRefreshBtn) themeRefreshBtn.addEventListener('click', function(e) { 
+                e.preventDefault(); 
+                refreshTheme(); 
+            });
+            if (industryRefreshBtn) industryRefreshBtn.addEventListener('click', function(e) { 
+                e.preventDefault(); 
+                refreshIndustry(); 
+            });
         });
 
         async function refreshTheme() {
@@ -376,9 +420,221 @@
             setLoading(false);
         }
 
-        // 초기 데이터 로드
-        document.addEventListener('DOMContentLoaded', () => {
-            loadData('mixed');
+        // 급등주 데이터 로드
+        async function loadSurgeData() {
+            try {
+                const response = await fetch('/api/performance/surge');
+                const data = await response.json();
+                
+                if (data.market_status) {
+                    updateMarketStatus(data.market_status);
+                }
+                
+                const tbody = document.getElementById('surgeData');
+                tbody.innerHTML = '';
+                
+                if (!data.data || data.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="4" class="text-center">데이터 없음</td></tr>';
+                    return;
+                }
+                
+                data.data.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${item.name}</td>
+                            <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
+                            <td>${item.industry || '-'}</td>
+                            <td>${item.theme || '-'}</td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error('급등주 데이터 로딩 실패:', error);
+            }
+        }
+
+        // 업종 데이터 표시 함수 수정
+        function displayIndustryData(data) {
+            const tbody = document.querySelector('#industryTable tbody');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                
+                // 순위 컬럼 추가
+                const rankTd = document.createElement('td');
+                const rankSpan = document.createElement('span');
+                rankSpan.className = 'rank-number';
+                rankSpan.textContent = item.rank.current;
+                rankTd.appendChild(rankSpan);
+                
+                if (item.rank.is_new) {
+                    const newSpan = document.createElement('span');
+                    newSpan.className = 'rank-new';
+                    newSpan.textContent = 'NEW';
+                    rankTd.appendChild(newSpan);
+                } else if (item.rank.change !== null) {
+                    const changeSpan = document.createElement('span');
+                    changeSpan.className = `rank-change ${item.rank.change > 0 ? 'down' : 'up'}`;
+                    changeSpan.textContent = item.rank.change > 0 ? `▼${item.rank.change}` : `▲${-item.rank.change}`;
+                    rankTd.appendChild(changeSpan);
+                }
+                tr.appendChild(rankTd);
+                
+                // 기존 컬럼들 추가
+                tr.innerHTML += `
+                    <td>${item.name}</td>
+                    <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
+                    <td>${item.up_stocks}/${item.down_stocks}</td>
+                    <td class="text-right">${formatNumber(item.market_cap)}</td>
+                    <td class="text-right">${formatNumber(item.trading_value)}</td>
+                    <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 테마 데이터 표시 함수 수정
+        function displayThemeData(data) {
+            const tbody = document.querySelector('#themeTable tbody');
+            tbody.innerHTML = '';
+            
+            data.forEach(item => {
+                const tr = document.createElement('tr');
+                
+                // 순위 컬럼 추가
+                const rankTd = document.createElement('td');
+                const rankSpan = document.createElement('span');
+                rankSpan.className = 'rank-number';
+                rankSpan.textContent = item.rank.current;
+                rankTd.appendChild(rankSpan);
+                
+                if (item.rank.is_new) {
+                    const newSpan = document.createElement('span');
+                    newSpan.className = 'rank-new';
+                    newSpan.textContent = 'NEW';
+                    rankTd.appendChild(newSpan);
+                } else if (item.rank.change !== null) {
+                    const changeSpan = document.createElement('span');
+                    changeSpan.className = `rank-change ${item.rank.change > 0 ? 'down' : 'up'}`;
+                    changeSpan.textContent = item.rank.change > 0 ? `▼${item.rank.change}` : `▲${-item.rank.change}`;
+                    rankTd.appendChild(changeSpan);
+                }
+                tr.appendChild(rankTd);
+                
+                // 기존 컬럼들 추가
+                tr.innerHTML += `
+                    <td>${item.name}</td>
+                    <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
+                    <td>${item.up_stocks}/${item.down_stocks}</td>
+                    <td class="text-right">${formatNumber(item.market_cap)}</td>
+                    <td class="text-right">${formatNumber(item.trading_value)}</td>
+                    <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
+                `;
+                
+                tbody.appendChild(tr);
+            });
+        }
+
+        // 업종 데이터 로드
+        async function loadIndustryData() {
+            try {
+                const response = await fetch('/api/performance/industry');
+                const data = await response.json();
+                
+                if (data.market_status) {
+                    updateMarketStatus(data.market_status);
+                }
+                
+                if (data.data) {
+                    displayIndustryData(data.data);
+                }
+            } catch (error) {
+                console.error('업종 데이터 로딩 실패:', error);
+            }
+        }
+
+        // 테마 데이터 로드
+        async function loadThemeData() {
+            try {
+                const response = await fetch('/api/performance/theme');
+                const data = await response.json();
+                
+                if (data.market_status) {
+                    updateMarketStatus(data.market_status);
+                }
+                
+                if (data.data) {
+                    displayThemeData(data.data);
+                }
+            } catch (error) {
+                console.error('테마 데이터 로딩 실패:', error);
+            }
+        }
+
+        // 업종&테마 통합 데이터 로드
+        async function loadMixedData() {
+            try {
+                const response = await fetch('/api/performance/mixed');
+                const data = await response.json();
+                
+                if (data.market_status) {
+                    updateMarketStatus(data.market_status, data.date);
+                }
+                
+                const tbody = document.getElementById('mixedData');
+                tbody.innerHTML = '';
+                
+                if (!data.data || data.data.length === 0) {
+                    tbody.innerHTML = '<tr><td colspan="7" class="text-center">데이터 없음</td></tr>';
+                    return;
+                }
+                
+                data.data.forEach(item => {
+                    tbody.innerHTML += `
+                        <tr>
+                            <td>${item.type === 'industry' ? '업종' : '테마'}</td>
+                            <td>
+                                <a href="/sector_detail?type=${item.type}&id=${item.id}">
+                                    ${item.name}
+                                </a>
+                            </td>
+                            <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
+                            <td>${item.up_stocks}/${item.down_stocks}</td>
+                            <td class="text-right">${formatNumber(item.market_cap)}</td>
+                            <td class="text-right">${formatNumber(item.trading_value)}</td>
+                            <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
+                        </tr>
+                    `;
+                });
+            } catch (error) {
+                console.error('업종&테마 데이터 로딩 실패:', error);
+            }
+        }
+
+        // 새로고침 버튼 클릭 시 데이터 로드
+        document.getElementById('refreshButton').addEventListener('click', function() {
+            const activeTab = document.querySelector('.nav-link.active');
+            const targetId = activeTab.getAttribute('href').substring(1);
+            
+            switch (targetId) {
+                case 'industry':
+                    loadIndustryData();
+                    break;
+                case 'theme':
+                    loadThemeData();
+                    break;
+                case 'mixed':
+                    loadMixedData();
+                    break;
+                case 'surge':
+                    loadSurgeData();
+                    break;
+                case 'rebound':
+                    loadReboundData();
+                    break;
+            }
         });
     </script>
 </body>
