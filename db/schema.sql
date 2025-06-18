@@ -159,14 +159,30 @@ CREATE TABLE IF NOT EXISTS company_info (
 CREATE TABLE IF NOT EXISTS financial_info (
     ticker VARCHAR(10),
     year VARCHAR(4),
-    revenue BIGINT,
-    operating_profit BIGINT,
-    net_income BIGINT,
+    period VARCHAR(10),  -- 연간(Y) or 분기(Q)
+    is_estimate BOOLEAN, -- 실적(0) or 컨센서스(1)
+    revenue BIGINT,      -- 매출액
+    operating_profit BIGINT,  -- 영업이익
+    net_profit BIGINT,       -- 당기순이익
+    operating_margin FLOAT,   -- 영업이익률
+    net_margin FLOAT,        -- 순이익률
+    roe FLOAT,               -- ROE(지배주주)
+    debt_ratio FLOAT,        -- 부채비율
+    quick_ratio FLOAT,       -- 당좌비율
+    reserve_ratio FLOAT,     -- 유보율
+    eps INTEGER,             -- EPS(원)
+    per FLOAT,              -- PER(배)
+    bps INTEGER,            -- BPS(원)
+    pbr FLOAT,              -- PBR(배)
+    cash_dividend INTEGER,   -- 주당배당금(원)
+    dividend_yield FLOAT,    -- 시가배당률(%)
+    dividend_payout FLOAT,   -- 배당성향(%)
     updated_at DATE,
-    PRIMARY KEY (ticker, year),
+    PRIMARY KEY (ticker, year, period),
     FOREIGN KEY (ticker) REFERENCES Stocks(stock_code)
 );
 
 -- 인덱스 추가
 CREATE INDEX IF NOT EXISTS idx_financial_info_year ON financial_info(year);
+CREATE INDEX IF NOT EXISTS idx_financial_info_period ON financial_info(period);
 CREATE INDEX IF NOT EXISTS idx_company_info_updated ON company_info(updated_at);

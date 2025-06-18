@@ -6,20 +6,58 @@ import requests
 from bs4 import BeautifulSoup
 import pandas as pd
 import time
-from typing import Dict, Optional, Tuple
+from typing import Dict, Optional, Tuple, List
 import re
 
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../../')))
 
-from src.collector.dart_collector import DartCollector
 from src.utils.logger import setup_logger
 
 logger = setup_logger()
 
-class NaverFinancialCrawler(DartCollector):
+class NaverFinancialCrawler:
     def __init__(self, db_path: str = "db/stock_master.db"):
-        super().__init__(db_path)
+        self.db_path = db_path
         self.base_url = "https://finance.naver.com/item/main.naver"
+        
+    def _get_connection(self):
+        """SQLite DB 연결을 반환합니다."""
+        return sqlite3.connect(self.db_path)
+        
+    def _check_needs_update(self, ticker: str) -> bool:
+        """주어진 종목의 업데이트 필요 여부를 확인합니다.
+        
+        Args:
+            ticker (str): 종목코드
+            
+        Returns:
+            bool: 업데이트 필요 여부
+        """
+        try:
+            with self._get_connection() as conn:
+                cursor = conn.cursor()
+                
+                # financial_info 테이블에서 최근 업데이트 날짜 확인
+                cursor.execute("""
+                    SELECT updated_at FROM financial_info 
+                    WHERE ticker = ? 
+                    ORDER BY updated_at DESC 
+                    LIMIT 1
+                """, (ticker,))
+                
+                result = cursor.fetchone()
+                
+                if not result:
+                    return True
+                    
+                last_update = datetime.strptime(result[0], '%Y-%m-%d')
+                days_since_update = (datetime.now() - last_update).days
+                
+                return days_since_update >= 30  # 30일 이상 지났으면 업데이트 필요
+                
+        except Exception as e:
+            logger.error(f"Error checking update status: {str(e)}")
+            return True
         
     def _get_company_info(self, ticker: str) -> Optional[Dict]:
         """네이버 금융에서 기업개요 정보를 크롤링합니다.
@@ -54,14 +92,26 @@ class NaverFinancialCrawler(DartCollector):
             logger.error(f"Error fetching company info for {ticker}: {str(e)}")
             return None
             
-    def _get_financial_info(self, ticker: str) -> Optional[Dict]:
+    def _parse_number(self, value) -> Optional[float]:
+        """숫자 형식의 문자열을 파싱합니다."""
+        if pd.isna(value) or value == '-':
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        try:
+            # 쉼표 제거 후 숫자로 변환
+            return float(str(value).replace(',', ''))
+        except (ValueError, TypeError):
+            return None
+
+    def _get_financial_info(self, ticker: str) -> List[Dict]:
         """네이버 금융에서 재무정보를 크롤링합니다.
         
         Args:
             ticker (str): 종목코드
             
         Returns:
-            Optional[Dict]: 재무정보
+            List[Dict]: 재무정보 리스트
         """
         try:
             url = f"{self.base_url}?code={ticker}"
@@ -76,58 +126,111 @@ class NaverFinancialCrawler(DartCollector):
                     
             if financial_df is None:
                 logger.warning(f"No financial info found for {ticker}")
-                return None
+                return []
+
+            logger.info(f"\nFinancial table:\n{financial_df.to_string()}")
+            
+            # 결과를 저장할 리스트
+            results = []
+            
+            # 컬럼 정보 분석
+            annual_columns = []
+            quarterly_columns = []
+            
+            # 연간/분기 데이터 구분
+            for col in financial_df.columns:
+                if not isinstance(col, tuple) or len(col) < 2:
+                    continue
+                    
+                section_type = col[0]  # '최근 연간 실적' or '최근 분기 실적'
+                period_info = col[1]  # '2024.12' or '2025.12(E)'
                 
-            # 최신 연도의 데이터 추출
-            latest_year = str(financial_df.columns[1])  # 첫 번째 연도 컬럼
+                if not period_info or period_info == '주요재무정보':
+                    continue
+                    
+                match = re.match(r'(\d{4})\.(\d{2})(?:\(E\))?', period_info)
+                if not match:
+                    continue
+                    
+                if '연간' in section_type:
+                    annual_columns.append(col)
+                elif '분기' in section_type:
+                    quarterly_columns.append(col)
             
-            # 연도 문자열에서 실제 연도만 추출 (예: '2022.12')
-            year_match = re.search(r'(\d{4})\.?(\d{2})?', latest_year)
-            if not year_match:
-                logger.warning(f"Could not parse year from {latest_year}")
-                return None
-            year = year_match.group(1)  # YYYY 형식의 연도만 사용
+            if not annual_columns:
+                logger.warning("Could not find annual data section")
+                return []
+                
+            # 데이터 추출 함수
+            def extract_data(col, is_quarterly: bool):
+                period_info = col[1]  # '2024.12' or '2025.12(E)'
+                match = re.match(r'(\d{4})\.(\d{2})(?:\(E\))?', period_info)
+                if not match:
+                    return None
+                    
+                year = match.group(1)
+                month = match.group(2)
+                is_estimate = '(E)' in period_info
+                period = 'Q' if is_quarterly else 'Y'
+                
+                data = {
+                    'ticker': ticker,
+                    'year': year,
+                    'period': period,
+                    'is_estimate': is_estimate,
+                    'updated_at': datetime.now().strftime('%Y-%m-%d')
+                }
+                
+                # 각 지표 추출
+                metrics = {
+                    '매출액': ('revenue', self._parse_number),
+                    '영업이익': ('operating_profit', self._parse_number),
+                    '당기순이익': ('net_profit', self._parse_number),
+                    '영업이익률': ('operating_margin', self._parse_number),
+                    '순이익률': ('net_margin', self._parse_number),
+                    'ROE(지배주주)': ('roe', self._parse_number),
+                    '부채비율': ('debt_ratio', self._parse_number),
+                    '당좌비율': ('quick_ratio', self._parse_number),
+                    '유보율': ('reserve_ratio', self._parse_number),
+                    'EPS(원)': ('eps', self._parse_number),
+                    'PER(배)': ('per', self._parse_number),
+                    'BPS(원)': ('bps', self._parse_number),
+                    'PBR(배)': ('pbr', self._parse_number),
+                    '주당배당금(원)': ('cash_dividend', self._parse_number),
+                    '시가배당률(%)': ('dividend_yield', self._parse_number),
+                    '배당성향(%)': ('dividend_payout', self._parse_number)
+                }
+                
+                for row_name, (col_name, parser) in metrics.items():
+                    try:
+                        value = financial_df.loc[financial_df.iloc[:, 0] == row_name, col].iloc[0]
+                        parsed_value = parser(value)
+                        data[col_name] = parsed_value
+                        if parsed_value is not None:
+                            logger.info(f"Found {col_name} ({period}): {parsed_value}")
+                    except (IndexError, KeyError):
+                        data[col_name] = None
+                
+                return data
             
-            def parse_number(value):
-                if pd.isna(value) or value == '-':
-                    return 0
-                if isinstance(value, (int, float)):
-                    return float(value)
-                # 문자열에서 쉼표 제거하고 숫자로 변환
-                try:
-                    return float(str(value).replace(',', ''))
-                except:
-                    return 0
-            
-            # 재무 데이터 찾기
-            revenue = 0
-            operating_profit = 0
-            net_income = 0
-            
-            # DataFrame을 순회하면서 필요한 행 찾기
-            for idx, row in financial_df.iterrows():
-                if '매출액' in str(row.iloc[0]):
-                    revenue = parse_number(row.iloc[1])  # 첫 번째 데이터 컬럼
-                elif '영업이익' in str(row.iloc[0]):
-                    operating_profit = parse_number(row.iloc[1])
-                elif '당기순이익' in str(row.iloc[0]):
-                    net_income = parse_number(row.iloc[1])
-            
-            logger.info(f"Extracted financial data for {ticker}: revenue={revenue}, op_profit={operating_profit}, net_income={net_income}")
-            
-            return {
-                'ticker': ticker,
-                'year': year,
-                'revenue': revenue,
-                'operating_profit': operating_profit,
-                'net_income': net_income,
-                'updated_at': datetime.now().strftime('%Y-%m-%d')
-            }
+            # 연간 데이터 추출
+            for col in annual_columns:
+                data = extract_data(col, False)
+                if data:
+                    results.append(data)
+                    
+            # 분기 데이터 추출
+            for col in quarterly_columns:
+                data = extract_data(col, True)
+                if data:
+                    results.append(data)
+                
+            return results
             
         except Exception as e:
-            logger.error(f"Error fetching financial info for {ticker}: {str(e)}")
-            return None
-            
+            logger.error(f"Error getting financial info for {ticker}: {str(e)}")
+            return []
+
     def _save_company_info(self, info: Dict) -> bool:
         """기업개요 정보를 DB에 저장합니다.
         
@@ -154,74 +257,51 @@ class NaverFinancialCrawler(DartCollector):
             logger.error(f"Error saving company info: {str(e)}")
             return False
             
-    def _save_financial_info(self, info: Dict) -> bool:
-        """재무정보를 DB에 저장합니다.
-        
-        Args:
-            info (Dict): 저장할 재무정보
+    def _save_financial_info(self, data_list: List[Dict]) -> bool:
+        """재무정보를 DB에 저장합니다."""
+        if not data_list:
+            return False
             
-        Returns:
-            bool: 저장 성공 여부
-        """
         try:
-            with self._get_connection() as conn:
-                cursor = conn.cursor()
+            conn = self._get_connection()
+            cursor = conn.cursor()
+            
+            for data in data_list:
+                columns = ', '.join(data.keys())
+                placeholders = ', '.join(['?' for _ in data])
+                values = tuple(data.values())
                 
-                cursor.execute("""
-                    INSERT OR REPLACE INTO financial_info 
-                    (ticker, year, revenue, operating_profit, net_income, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?)
-                """, (
-                    info['ticker'], 
-                    info['year'],
-                    info['revenue'],
-                    info['operating_profit'],
-                    info['net_income'],
-                    info['updated_at']
-                ))
+                query = f"""
+                INSERT OR REPLACE INTO financial_info ({columns})
+                VALUES ({placeholders})
+                """
                 
-                conn.commit()
-                return True
-                
+                cursor.execute(query, values)
+            
+            conn.commit()
+            logger.info(f"Successfully saved financial info")
+            return True
+            
         except Exception as e:
             logger.error(f"Error saving financial info: {str(e)}")
             return False
-            
-    def collect_financial_data(self, tickers: list) -> None:
-        """여러 종목의 기업개요와 재무정보를 수집합니다.
-        
-        Args:
-            tickers (list): 종목코드 리스트
-        """
-        for ticker in tickers:
-            try:
-                if not self._check_needs_update(ticker):
-                    logger.info(f"Skipping {ticker} - already updated within 30 days")
-                    continue
-                
-                # 기업개요 수집 및 저장
-                company_info = self._get_company_info(ticker)
-                if company_info:
-                    if self._save_company_info(company_info):
-                        logger.info(f"Successfully saved company info for {ticker}")
-                    else:
-                        logger.error(f"Failed to save company info for {ticker}")
-                
-                # 재무정보 수집 및 저장
-                financial_info = self._get_financial_info(ticker)
-                if financial_info:
-                    if self._save_financial_info(financial_info):
-                        logger.info(f"Successfully saved financial info for {ticker}")
-                        self._update_last_update_date(ticker)
-                    else:
-                        logger.error(f"Failed to save financial info for {ticker}")
-                
-                # 크롤링 간격 조절
-                time.sleep(1)
-                
-            except Exception as e:
-                logger.error(f"Error processing {ticker}: {str(e)}")
-                continue
+        finally:
+            if conn:
+                conn.close()
+
+    def collect_financial_data(self, tickers: List[str]) -> bool:
+        """주어진 종목들의 재무정보를 수집합니다."""
+        try:
+            for ticker in tickers:
+                # 재무정보 수집
+                financial_data = self._get_financial_info(ticker)
+                if financial_data:
+                    self._save_financial_info(financial_data)
+                    
+            return True
+        except Exception as e:
+            logger.error(f"Error processing {ticker}: {str(e)}")
+            return False
 
 # 테스트 실행
 if __name__ == "__main__":
