@@ -186,3 +186,30 @@ CREATE TABLE IF NOT EXISTS financial_info (
 CREATE INDEX IF NOT EXISTS idx_financial_info_year ON financial_info(year);
 CREATE INDEX IF NOT EXISTS idx_financial_info_period ON financial_info(period);
 CREATE INDEX IF NOT EXISTS idx_company_info_updated ON company_info(updated_at);
+
+-- 재무제표 평가 결과 테이블
+CREATE TABLE IF NOT EXISTS financial_evaluation (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticker TEXT NOT NULL,
+    eval_date DATE NOT NULL,
+    
+    -- 영역별 점수 (0.0 ~ 5.0)
+    growth_score REAL,
+    profitability_score REAL,
+    stability_score REAL,
+    market_value_score REAL,
+    total_score REAL,
+    
+    -- 투자 의견
+    investment_opinion TEXT,
+    
+    -- 상세 평가 내용 (JSON)
+    evaluation_details TEXT,
+    
+    -- 메타 정보
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    
+    -- 제약조건
+    UNIQUE(ticker, eval_date)
+);

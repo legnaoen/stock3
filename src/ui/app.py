@@ -9,6 +9,8 @@ import re
 from src.utils.market_time import get_market_date, is_market_open, get_market_status
 from src.api.sector_api import sector_api
 from src.collector.news_crawler import crawl_naver_news_for_stock
+from src.collector.naver_financial_crawler import NaverFinancialCrawler
+from src.analyzer.financial_statement_analyzer import FinancialStatementAnalyzer
 
 app = Flask(__name__)
 app.register_blueprint(sector_api)
@@ -642,16 +644,21 @@ def stock_detail():
             theme = row[0]
         # 뉴스(최신 5개)
         cursor.execute("SELECT title, summary, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 5", (code,))
-        today = datetime.date.today()
+        today = datetime.today().date()
         news_list = []
         for r in cursor.fetchall():
             news_date = r[3]
             try:
-                news_date_obj = datetime.datetime.strptime(news_date, '%Y-%m-%d').date()
+                news_date_obj = datetime.strptime(news_date, '%Y-%m-%d').date()
                 days_diff = (today - news_date_obj).days
             except Exception:
                 days_diff = None
             news_list.append({'title': r[0], 'summary': r[1], 'url': r[2], 'date': news_date, 'days_diff': days_diff})
+        # 재무정보/평가 쿼리 추가
+        cursor.execute("SELECT * FROM financial_info WHERE ticker = ? ORDER BY year DESC, period DESC", (code,))
+        financial_info_list = cursor.fetchall()
+        cursor.execute("SELECT * FROM financial_evaluation WHERE ticker = ? ORDER BY eval_date DESC, created_at DESC LIMIT 1", (code,))
+        financial_evaluation = cursor.fetchone()
     return render_template('stock_detail.html',
         stock_name=stock_info.get('name', '정보 없음'),
         stock_code=code,
@@ -665,7 +672,9 @@ def stock_detail():
         volume=price_info.get('volume', '정보 없음'),
         trading_value=price_info.get('trading_value', '정보 없음'),
         news_list=news_list,
-        rebound_rate=rebound_rate
+        rebound_rate=rebound_rate,
+        financial_info_list=financial_info_list,
+        financial_evaluation=financial_evaluation
     )
 
 @app.route('/api/stock/<code>/ohlcv')
@@ -725,17 +734,60 @@ def get_stock_news_api(code):
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
         cursor.execute("SELECT title, summary, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 5", (code,))
-        today = datetime.date.today()
+        today = datetime.today().date()
         news = []
         for r in cursor.fetchall():
             news_date = r[3]
             try:
-                news_date_obj = datetime.datetime.strptime(news_date, '%Y-%m-%d').date()
+                news_date_obj = datetime.strptime(news_date, '%Y-%m-%d').date()
                 days_diff = (today - news_date_obj).days
             except Exception:
                 days_diff = None
             news.append({'title': r[0], 'summary': r[1], 'url': r[2], 'date': news_date, 'days_diff': days_diff})
     return jsonify({'news': news})
+
+@app.route('/api/stock/<code>/update_financial', methods=['POST'])
+def update_financial_api(code):
+    try:
+        print(f"[update_financial_api] Start for code={code}")
+        # 1. 재무정보 크롤링
+        crawler = NaverFinancialCrawler(DB_PATH)
+        crawler.collect_financial_data([code])
+        print(f"[update_financial_api] Financial crawling done for {code}")
+        # 2. 재무 평가
+        analyzer = FinancialStatementAnalyzer()
+        eval_result = analyzer.analyze(code)
+        print(f"[update_financial_api] Financial analysis done for {code}")
+        # 3. 최신 재무정보/평가 결과 DB에서 읽기 (간단 예시)
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            try:
+                cursor.execute("SELECT * FROM financial_info WHERE ticker = ? ORDER BY updated_at DESC LIMIT 1", (code,))
+                fin_row = cursor.fetchone()
+                print(f"[update_financial_api] financial_info row: {fin_row}")
+            except Exception as e:
+                print(f"[update_financial_api] financial_info query error: {e}")
+                fin_row = None
+            try:
+                cursor.execute("SELECT * FROM financial_evaluation WHERE ticker = ? ORDER BY eval_date DESC, created_at DESC LIMIT 1", (code,))
+                eval_row = cursor.fetchone()
+                print(f"[update_financial_api] financial_evaluation row: {eval_row}")
+                if not eval_row:
+                    print(f"[update_financial_api] No financial_evaluation found for {code}")
+            except Exception as e:
+                print(f"[update_financial_api] financial_evaluation query error: {e}")
+                eval_row = None
+        if not fin_row and not eval_row:
+            return jsonify({'status': 'error', 'message': 'DB에 재무정보/평가 결과가 없습니다.'}), 500
+        return jsonify({
+            'status': 'success',
+            'financial_info': fin_row,
+            'financial_evaluation': eval_row,
+            'message': '재무정보 및 평가가 갱신되었습니다.'
+        })
+    except Exception as e:
+        print(f"[update_financial_api] Exception: {e}")
+        return jsonify({'status': 'error', 'message': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

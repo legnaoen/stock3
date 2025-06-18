@@ -10,6 +10,27 @@
         .chart-placeholder { height: 320px; background: #f3f3f3; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 1.2em; width: 100%; }
         .positive { color: #d60000; }
         .negative { color: #0051c7; }
+        .fin-table {
+          width: 100%;
+          border-collapse: collapse;
+          font-size: 14px;
+        }
+        .fin-table th, .fin-table td {
+          border: none;
+          border-bottom: 1px solid #e0e0e0;
+          padding: 8px 4px;
+          text-align: center;
+        }
+        .fin-table th {
+          background: #fafbfc;
+          font-weight: 600;
+        }
+        .fin-table tr:last-child td {
+          border-bottom: none;
+        }
+        .fin-table td:first-child, .fin-table th:first-child {
+          text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -67,12 +88,104 @@
             <li class="list-group-item dummy">뉴스 정보 없음 (크롤러 실행 시 최신 뉴스 표시)</li>
         {% endif %}
     </ul>
-    <div class="section-title">재무 요약</div>
-    <table class="table table-bordered w-50">
-        <tr><th>매출</th><td class="dummy">정보 없음</td></tr>
-        <tr><th>영업이익</th><td class="dummy">정보 없음</td></tr>
-        <tr><th>PER</th><td class="dummy">정보 없음</td></tr>
+    <div class="section-title">재무 요약
+      <button class="btn btn-sm btn-outline-primary ms-2" id="update-financial-btn" onclick="updateFinancial()">재무 업데이트</button>
+    </div>
+    <table class="fin-table" style="margin-bottom:32px;">
+      <thead>
+        <tr>
+          <th>평가영역</th>
+          <th>점수</th>
+          <th>의견</th>
+        </tr>
+      </thead>
+      <tbody id="fin-summary-tbody">
+      {% if financial_evaluation %}
+        {% set eval_row = financial_evaluation %}
+        <tr><td>성장성</td><td>{{ '%.2f' % eval_row[3] }}</td><td>-</td></tr>
+        <tr><td>수익성</td><td>{{ '%.2f' % eval_row[4] }}</td><td>-</td></tr>
+        <tr><td>안정성</td><td>{{ '%.2f' % eval_row[5] }}</td><td>-</td></tr>
+        <tr><td>시장가치</td><td>{{ '%.2f' % eval_row[6] }}</td><td>-</td></tr>
+        <tr><td><b>종합</b></td><td>{{ '%.2f' % eval_row[7] }}</td><td>{{ eval_row[8] or '-' }}</td></tr>
+      {% else %}
+        <tr><td>성장성</td><td>-</td><td>-</td></tr>
+        <tr><td>수익성</td><td>-</td><td>-</td></tr>
+        <tr><td>안정성</td><td>-</td><td>-</td></tr>
+        <tr><td>시장가치</td><td>-</td><td>-</td></tr>
+        <tr><td><b>종합</b></td><td>-</td><td>-</td></tr>
+        <tr><td colspan="3" style="color:gray;">아직 재무 평가 정보가 없습니다.</td></tr>
+      {% endif %}
+      </tbody>
     </table>
+
+    <table class="fin-table">
+      <thead>
+        <tr>
+          <th>주요재무정보</th>
+          <th>2022.12<br/>IFRS 연결</th>
+          <th>2023.12<br/>IFRS 연결</th>
+          <th>2024.12<br/>IFRS 연결</th>
+          <th>2025.12(E)<br/>IFRS 연결</th>
+          <th>2024.03<br/>IFRS 연결</th>
+          <th>2024.06<br/>IFRS 연결</th>
+          <th>2024.09<br/>IFRS 연결</th>
+          <th>2024.12<br/>IFRS 연결</th>
+          <th>2025.03<br/>IFRS 연결</th>
+          <th>2025.06(E)<br/>IFRS 연결</th>
+        </tr>
+      </thead>
+      <tbody id="fin-info-tbody">
+      {% set columns = [
+        ('2022', 'Y'), ('2023', 'Y'), ('2024', 'Y'), ('2025', 'Y'),
+        ('2024', 'Q1'), ('2024', 'Q2'), ('2024', 'Q3'), ('2024', 'Q4'),
+        ('2025', 'Q1'), ('2025', 'Q2')
+      ] %}
+      {% set col_labels = [
+        '2022.12', '2023.12', '2024.12', '2025.12(E)',
+        '2024.03', '2024.06', '2024.09', '2024.12',
+        '2025.03', '2025.06(E)'
+      ] %}
+      {% set metrics = [
+        ('매출액(억원)', 4), ('영업이익(억원)', 5), ('당기순이익(억원)', 6),
+        ('영업이익률(%)', 7), ('순이익률(%)', 8), ('ROE(%)', 9),
+        ('부채비율(%)', 10), ('당좌비율(%)', 11), ('유보율(%)', 12),
+        ('EPS(원)', 13), ('PER(배)', 14), ('BPS(원)', 15),
+        ('PBR(배)', 16), ('주당배당금(원)', 17), ('시가배당률(%)', 18), ('배당성향(%)', 19)
+      ] %}
+      {% if financial_info_list and financial_info_list|length > 0 %}
+        {% set info_map = dict() %}
+        {% for row in financial_info_list %}
+          {% set key = (row[1], row[2]) %}
+          {% set _ = info_map.update({key: row}) %}
+        {% endfor %}
+        {% for metric, idx in metrics %}
+          <tr><td>{{ metric }}</td>
+          {% for y, p in columns %}
+            <td>{{ info_map[(y, p)][idx] if (y, p) in info_map else '-' }}</td>
+          {% endfor %}
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td>매출액(억원)</td><td colspan="10" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
+        <tr><td>영업이익(억원)</td></tr>
+        <tr><td>당기순이익(억원)</td></tr>
+        <tr><td>영업이익률(%)</td></tr>
+        <tr><td>순이익률(%)</td></tr>
+        <tr><td>ROE(%)</td></tr>
+        <tr><td>부채비율(%)</td></tr>
+        <tr><td>당좌비율(%)</td></tr>
+        <tr><td>유보율(%)</td></tr>
+        <tr><td>EPS(원)</td></tr>
+        <tr><td>PER(배)</td></tr>
+        <tr><td>BPS(원)</td></tr>
+        <tr><td>PBR(배)</td></tr>
+        <tr><td>주당배당금(원)</td></tr>
+        <tr><td>시가배당률(%)</td></tr>
+        <tr><td>배당성향(%)</td></tr>
+      {% endif %}
+      </tbody>
+    </table>
+
     <div class="section-title">외부 링크</div>
     <a href="https://finance.naver.com/item/main.naver?code=005930" target="_blank">네이버 증권</a>
 </div>
@@ -236,6 +349,100 @@ document.addEventListener('DOMContentLoaded', function() {
         rateSpan.textContent = '';
     }
 });
+function updateFinancial() {
+  const btn = document.getElementById('update-financial-btn');
+  const code = document.getElementById('stock-code').textContent.replace(/[()]/g, '');
+  btn.disabled = true;
+  const original = btn.innerHTML;
+  btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>진행중...';
+  fetch(`/api/stock/${code}/update_financial`, { method: 'POST' })
+    .then(res => res.json())
+    .then(data => {
+      if (data.status === 'success') {
+        alert(data.message || '재무정보가 갱신되었습니다.');
+        renderFinancialSummary(data.financial_evaluation);
+        renderFinancialInfo(data.financial_info);
+      } else {
+        alert(data.message || '재무정보 갱신 실패');
+        console.error('재무 업데이트 실패:', data);
+      }
+    })
+    .catch(e => {
+      alert('재무 업데이트 중 오류 발생: ' + e);
+      console.error('재무 업데이트 오류:', e);
+    })
+    .finally(() => {
+      btn.disabled = false;
+      btn.innerHTML = original;
+    });
+}
+// 재무 요약(평가) 표 갱신 함수
+function renderFinancialSummary(evalRow) {
+  const tbody = document.getElementById('fin-summary-tbody');
+  if (!evalRow) {
+    tbody.innerHTML = `<tr><td>성장성</td><td>-</td><td>-</td></tr>
+      <tr><td>수익성</td><td>-</td><td>-</td></tr>
+      <tr><td>안정성</td><td>-</td><td>-</td></tr>
+      <tr><td>시장가치</td><td>-</td><td>-</td></tr>
+      <tr><td><b>종합</b></td><td>-</td><td>-</td></tr>
+      <tr><td colspan="3" style="color:gray;">아직 재무 평가 정보가 없습니다.</td></tr>`;
+    return;
+  }
+  // evalRow: (id, ticker, eval_date, growth_score, profitability_score, stability_score, market_value_score, total_score, investment_opinion, evaluation_details, ...)
+  const [id, ticker, eval_date, growth, profit, stability, market, total, opinion, details] = evalRow;
+  let detailObj = {};
+  try { detailObj = JSON.parse(details); } catch(e) {}
+  tbody.innerHTML = `
+    <tr><td>성장성</td><td>${growth?.toFixed(2) ?? '-'}</td><td>-</td></tr>
+    <tr><td>수익성</td><td>${profit?.toFixed(2) ?? '-'}</td><td>-</td></tr>
+    <tr><td>안정성</td><td>${stability?.toFixed(2) ?? '-'}</td><td>-</td></tr>
+    <tr><td>시장가치</td><td>${market?.toFixed(2) ?? '-'}</td><td>-</td></tr>
+    <tr><td><b>종합</b></td><td>${total?.toFixed(2) ?? '-'}</td><td>${opinion ?? '-'}</td></tr>
+  `;
+}
+// 재무정보 표 갱신 함수
+function renderFinancialInfo(finRow) {
+  const tbody = document.getElementById('fin-info-tbody');
+  if (!finRow) {
+    tbody.innerHTML = `<tr><td>매출액(억원)</td><td colspan="10" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
+      <tr><td>영업이익(억원)</td></tr>
+      <tr><td>당기순이익(억원)</td></tr>
+      <tr><td>영업이익률(%)</td></tr>
+      <tr><td>순이익률(%)</td></tr>
+      <tr><td>ROE(%)</td></tr>
+      <tr><td>부채비율(%)</td></tr>
+      <tr><td>당좌비율(%)</td></tr>
+      <tr><td>유보율(%)</td></tr>
+      <tr><td>EPS(원)</td></tr>
+      <tr><td>PER(배)</td></tr>
+      <tr><td>BPS(원)</td></tr>
+      <tr><td>PBR(배)</td></tr>
+      <tr><td>주당배당금(원)</td></tr>
+      <tr><td>시가배당률(%)</td></tr>
+      <tr><td>배당성향(%)</td></tr>`;
+    return;
+  }
+  // finRow: (ticker, year, period, is_estimate, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout, ...)
+  const [ticker, year, period, is_estimate, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout] = finRow;
+  tbody.innerHTML = `
+    <tr><td>매출액(억원)</td><td colspan="10">${revenue ?? '-'}</td></tr>
+    <tr><td>영업이익(억원)</td><td colspan="10">${operating_profit ?? '-'}</td></tr>
+    <tr><td>당기순이익(억원)</td><td colspan="10">${net_profit ?? '-'}</td></tr>
+    <tr><td>영업이익률(%)</td><td colspan="10">${operating_margin ?? '-'}</td></tr>
+    <tr><td>순이익률(%)</td><td colspan="10">${net_margin ?? '-'}</td></tr>
+    <tr><td>ROE(%)</td><td colspan="10">${roe ?? '-'}</td></tr>
+    <tr><td>부채비율(%)</td><td colspan="10">${debt_ratio ?? '-'}</td></tr>
+    <tr><td>당좌비율(%)</td><td colspan="10">${quick_ratio ?? '-'}</td></tr>
+    <tr><td>유보율(%)</td><td colspan="10">${reserve_ratio ?? '-'}</td></tr>
+    <tr><td>EPS(원)</td><td colspan="10">${eps ?? '-'}</td></tr>
+    <tr><td>PER(배)</td><td colspan="10">${per ?? '-'}</td></tr>
+    <tr><td>BPS(원)</td><td colspan="10">${bps ?? '-'}</td></tr>
+    <tr><td>PBR(배)</td><td colspan="10">${pbr ?? '-'}</td></tr>
+    <tr><td>주당배당금(원)</td><td colspan="10">${cash_dividend ?? '-'}</td></tr>
+    <tr><td>시가배당률(%)</td><td colspan="10">${dividend_yield ?? '-'}</td></tr>
+    <tr><td>배당성향(%)</td><td colspan="10">${dividend_payout ?? '-'}</td></tr>
+  `;
+}
 </script>
 </body>
 </html> 
