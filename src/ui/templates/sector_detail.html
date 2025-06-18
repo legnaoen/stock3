@@ -85,8 +85,8 @@
             </select>
             <label class="me-2">표시 방식</label>
             <select id="chartMode" class="form-select w-auto">
-                <option value="absolute" selected>절대값</option>
-                <option value="percent">변동률(%)</option>
+                <option value="absolute">절대값</option>
+                <option value="percent" selected>변동률(%)</option>
             </select>
         </div>
         <div style="background:#f8f9fa; border-radius:8px; padding:16px; margin-bottom:16px;">
@@ -151,7 +151,15 @@
                     document.getElementById('total-stocks').textContent = info.total_stocks;
                     document.getElementById('up-stocks').textContent = info.up_stocks;
                     document.getElementById('down-stocks').textContent = info.down_stocks;
-                    document.getElementById('change-ratio').innerHTML = formatChangeRatio(info.price_change_ratio);
+                    // 등락률: latest_change_rate(차트와 동일) > price_change_ratio > change_rate
+                    let changeRatio = (typeof info.latest_change_rate === 'number' && !isNaN(info.latest_change_rate))
+                        ? info.latest_change_rate
+                        : (typeof info.price_change_ratio === 'number' && !isNaN(info.price_change_ratio))
+                            ? info.price_change_ratio
+                            : (typeof info.change_rate === 'number' && !isNaN(info.change_rate))
+                                ? info.change_rate
+                                : 0;
+                    document.getElementById('change-ratio').innerHTML = formatChangeRatio(changeRatio);
                     document.getElementById('breadcrumb-sector-name').textContent = info.name;
 
                     // 종목 테이블 초기화
@@ -161,7 +169,7 @@
                             { 
                                 data: 'stock_name',
                                 render: function(data, type, row) {
-                                    return `<a href="https://finance.naver.com/item/main.naver?code=${row.stock_code}" target="_blank">${data}</a>`;
+                                    return `<a href="/stock_detail?code=${row.stock_code}">${data}</a>`;
                                 }
                             },
                             { 

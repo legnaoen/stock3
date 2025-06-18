@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>종목 상세정보</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+    <style>
+        .section-title { font-weight: bold; margin-top: 24px; margin-bottom: 12px; }
+        .dummy { color: #aaa; font-style: italic; }
+        .chart-placeholder { height: 320px; background: #f3f3f3; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 1.2em; width: 100%; }
+    </style>
+</head>
+<body>
+<div class="container mt-4 mb-5">
+    <h2 id="stock-name">{{ stock_name }} <span class="text-muted" id="stock-code">({{ stock_code }})</span></h2>
+    <div class="mb-3">
+        <span class="me-3">업종: <span id="industry">{{ industry }}</span></span>
+        <span class="me-3">테마: <span id="theme">{{ theme }}</span></span>
+        <span class="me-3">시가총액: <span id="market-cap">{{ market_cap }}</span></span>
+        <span class="me-3">상장시장: <span id="market-type">{{ market_type }}</span></span>
+        <span class="me-3">상장일: <span id="listed-date">{{ listed_date }}</span></span>
+    </div>
+    <div class="section-title">최근 시세</div>
+    <div class="row mb-3">
+        <div class="col">현재가: <span id="close-price">{{ close_price }}</span></div>
+        <div class="col">전일대비: <span id="change-rate">{{ change_rate }}</span></div>
+        <div class="col">거래량: <span id="volume">{{ volume }}</span></div>
+        <div class="col">거래대금: <span id="trading-value">{{ trading_value }}</span></div>
+    </div>
+    <div class="section-title">봉차트(캔들차트)</div>
+    <div class="chart-placeholder mb-3" id="chart-area" style="width:100%;min-width:600px;height:350px;min-height:300px;box-sizing:border-box;overflow:visible;display:flex;align-items:center;justify-content:center;">
+        <div id="price-chart" style="width:100%;height:100%;min-height:180px;"></div>
+    </div>
+    <div class="section-title">주요 파생지표</div>
+    <div class="row mb-3">
+        <div class="col">5일 평균 거래대금: <span id="avg-trading-5d">1,200억</span></div>
+        <div class="col">60일 저점: <span id="low-60d">62,000</span></div>
+        <div class="col">5/20/60일 이평선: <span id="ma">68,000 / 67,000 / 65,000</span></div>
+    </div>
+    <div class="section-title">최근 뉴스
+        <button class="btn btn-sm btn-outline-primary ms-2" onclick="crawlNews()">뉴스 크롤러 실행</button>
+    </div>
+    <ul id="news-list" class="list-group mb-3">
+        {% if news_list and news_list|length > 0 %}
+            {% for news in news_list %}
+                <li class="list-group-item"><a href="{{ news.url }}" target="_blank">{{ news.title }}</a></li>
+            {% endfor %}
+        {% else %}
+            <li class="list-group-item dummy">뉴스 정보 없음 (크롤러 실행 시 최신 뉴스 표시)</li>
+        {% endif %}
+    </ul>
+    <div class="section-title">재무 요약</div>
+    <table class="table table-bordered w-50">
+        <tr><th>매출</th><td class="dummy">정보 없음</td></tr>
+        <tr><th>영업이익</th><td class="dummy">정보 없음</td></tr>
+        <tr><th>PER</th><td class="dummy">정보 없음</td></tr>
+    </table>
+    <div class="section-title">외부 링크</div>
+    <a href="https://finance.naver.com/item/main.naver?code=005930" target="_blank">네이버 증권</a>
+</div>
+<script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+let priceChart = null;
+function crawlNews() {
+    alert('뉴스 크롤러 실행 (추후 연동)');
+    // 실제 연동 시 fetch('/api/stock_news_crawl?code=...') 등으로 구현
+}
+function renderCandleChart(code) {
+    fetch(`/api/stock/${code}/ohlcv?days=60`)
+        .then(res => res.json())
+        .then(data => {
+            if (!data.dates || data.dates.length === 0) {
+                document.getElementById('price-chart').innerHTML = '<span class="dummy">차트 데이터 없음</span>';
+                return;
+            }
+            document.getElementById('price-chart').innerHTML = '';
+            const container = document.getElementById('chart-area');
+            const priceWidth = Math.max(container.offsetWidth - 32, 100);
+            const priceHeight = Math.max(container.offsetHeight - 32, 100);
+            const priceContainer = document.getElementById('price-chart');
+            priceContainer.style.width = priceWidth + 'px';
+            priceContainer.style.height = priceHeight + 'px';
+            priceChart = LightweightCharts.createChart(priceContainer, {
+                width: priceWidth,
+                height: priceHeight,
+                layout: { background: { color: '#f3f3f3' }, textColor: '#222' },
+                grid: { vertLines: { color: '#eee' }, horzLines: { color: '#eee' } },
+                rightPriceScale: { borderColor: '#ccc', scaleMargins: { top: 0.2, bottom: 0.15 } },
+                leftPriceScale: { scaleMargins: { top: 0.2, bottom: 0.15 } },
+                timeScale: { borderColor: '#ccc', timeVisible: true, secondsVisible: false, rightOffset: 2, barSpacing: 8 }
+            });
+            const candleSeries = priceChart.addCandlestickSeries({
+                upColor: '#d60000', // 빨강(상승)
+                downColor: '#0051c7', // 파랑(하락)
+                borderUpColor: '#d60000',
+                borderDownColor: '#0051c7',
+                wickUpColor: '#d60000',
+                wickDownColor: '#0051c7'
+            });
+            const ohlc = data.dates.map((d, i) => ({
+                time: Math.floor(new Date(d).getTime() / 1000),
+                open: Number(data.open[i]),
+                high: Number(data.high[i]),
+                low: Number(data.low[i]),
+                close: Number(data.close[i])
+            }));
+            candleSeries.setData(ohlc);
+            priceChart.timeScale().fitContent();
+        })
+        .catch((e) => {
+            console.error('차트 렌더링 오류:', e);
+            document.getElementById('price-chart').innerHTML = '<span class="dummy">차트 데이터 없음</span>';
+        });
+}
+window.addEventListener('resize', function() {
+    const container = document.getElementById('chart-area');
+    const priceContainer = document.getElementById('price-chart');
+    if (priceChart && container && priceContainer) {
+        const width = Math.max(container.offsetWidth - 32, 100);
+        const height = Math.max(container.offsetHeight - 32, 100);
+        priceContainer.style.width = width + 'px';
+        priceContainer.style.height = height + 'px';
+        priceChart.resize(width, height);
+    }
+});
+if (window.ResizeObserver) {
+    const container = document.getElementById('chart-area');
+    const priceContainer = document.getElementById('price-chart');
+    const ro = new ResizeObserver(() => {
+        if (priceChart && container && priceContainer) {
+            const width = Math.max(container.offsetWidth - 32, 100);
+            const height = Math.max(container.offsetHeight - 32, 100);
+            priceContainer.style.width = width + 'px';
+            priceContainer.style.height = height + 'px';
+            priceChart.resize(width, height);
+        }
+    });
+    if (container) ro.observe(container);
+}
+document.addEventListener('DOMContentLoaded', function() {
+    const code = '{{ stock_code }}';
+    renderCandleChart(code);
+});
+</script>
+</body>
+</html> 

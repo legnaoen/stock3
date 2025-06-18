@@ -222,10 +222,21 @@
                 if (type === 'surge') {
                     tbody.innerHTML = data.data.map(item => `
                         <tr>
-                            <td>${item.name}</td>
+                            <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
                             <td>${formatChangeRate(item.change_rate)}</td>
                             <td>${item.industry}</td>
                             <td>${item.theme}</td>
+                        </tr>
+                    `).join('');
+                } else if (type === 'rebound') {
+                    tbody.innerHTML = data.data.map(row => `
+                        <tr>
+                            <td><a href="/stock_detail?code=${row.code}">${row.name}</a></td>
+                            <td>${formatChangeRate(row.change_rate)}</td>
+                            <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
+                            <td>${row.industry || '-'}</td>
+                            <td>${row.theme || '-'}</td>
+                            <td class="text-right">${row.avg_trading_value_5d ? formatNumber(row.avg_trading_value_5d) : '-'}</td>
                         </tr>
                     `).join('');
                 } else {
