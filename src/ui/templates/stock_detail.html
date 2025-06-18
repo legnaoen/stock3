@@ -8,11 +8,20 @@
         .section-title { font-weight: bold; margin-top: 24px; margin-bottom: 12px; }
         .dummy { color: #aaa; font-style: italic; }
         .chart-placeholder { height: 320px; background: #f3f3f3; border-radius: 8px; display: flex; align-items: center; justify-content: center; color: #bbb; font-size: 1.2em; width: 100%; }
+        .positive { color: #d60000; }
+        .negative { color: #0051c7; }
     </style>
 </head>
 <body>
+<div class="container mt-4 mb-2">
+    <nav aria-label="breadcrumb">
+        <ol class="breadcrumb" id="breadcrumb-nav">
+            <!-- JS로 동적 생성 -->
+        </ol>
+    </nav>
+</div>
 <div class="container mt-4 mb-5">
-    <h2 id="stock-name">{{ stock_name }} <span class="text-muted" id="stock-code">({{ stock_code }})</span></h2>
+    <h2 id="stock-name">{{ stock_name }} <span class="text-muted" id="stock-code">({{ stock_code }})</span><span id="stock-change-rate" class="ms-2{% if change_rate|float > 0 %} positive{% elif change_rate|float < 0 %} negative{% endif %}">{% if change_rate != '정보 없음' %}{{ '%+.2f'|format(change_rate|float) }}%{% else %}정보 없음{% endif %}</span>{% if rebound_rate is not none %}<span class="rebound-rate-info ms-3{% if rebound_rate > 0 %} positive{% elif rebound_rate < 0 %} negative{% endif %}" style="font-size:16px;">(60일저점 반등률: {{ '%+.2f'|format(rebound_rate) }}%)</span>{% endif %}</h2>
     <div class="mb-3">
         <span class="me-3">업종: <span id="industry">{{ industry }}</span></span>
         <span class="me-3">테마: <span id="theme">{{ theme }}</span></span>
@@ -140,6 +149,41 @@ if (window.ResizeObserver) {
 document.addEventListener('DOMContentLoaded', function() {
     const code = '{{ stock_code }}';
     renderCandleChart(code);
+    const params = new URLSearchParams(window.location.search);
+    const from = params.get('from');
+    const type = params.get('type');
+    const id = params.get('id');
+    const stockName = document.getElementById('stock-name')?.childNodes[0]?.textContent?.trim() || '종목상세';
+    let upperName = '';
+    let upperUrl = '';
+    if (from && type && id) {
+        // 업종/테마명은 이미 상세정보에 표시되어 있으므로 그대로 활용
+        if (type === 'industry') {
+            upperName = document.getElementById('industry')?.textContent || '업종상세';
+            upperUrl = `/sector_detail?type=industry&id=${id}`;
+        } else if (type === 'theme') {
+            upperName = document.getElementById('theme')?.textContent || '테마상세';
+            upperUrl = `/sector_detail?type=theme&id=${id}`;
+        }
+    }
+    let html = '<li class="breadcrumb-item"><a href="/">Home</a></li>';
+    if (upperName && upperUrl) {
+        html += `<li class="breadcrumb-item"><a href="${upperUrl}">${upperName}</a></li>`;
+    }
+    html += `<li class="breadcrumb-item active" aria-current="page">${stockName}</li>`;
+    document.getElementById('breadcrumb-nav').innerHTML = html;
+    // 종목명 옆에 등락률 표시
+    const changeRate = Number('{{ change_rate }}');
+    const rateSpan = document.getElementById('stock-change-rate');
+    if (!isNaN(changeRate)) {
+        let colorClass = '';
+        if (changeRate > 0) colorClass = 'positive';
+        else if (changeRate < 0) colorClass = 'negative';
+        rateSpan.className = `ms-2 ${colorClass}`;
+        rateSpan.textContent = (changeRate > 0 ? '+' : '') + changeRate.toFixed(2) + '%';
+    } else {
+        rateSpan.textContent = '';
+    }
 });
 </script>
 </body>

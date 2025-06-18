@@ -447,6 +447,24 @@ def refresh_full():
     # 반환: 마지막 전체갱신일
     return jsonify({'last_full_refresh': last_full_refresh['date'] or '-'})
 
+@app.route('/api/refresh/theme', methods=['POST'])
+def refresh_theme():
+    today = datetime.now().strftime('%Y-%m-%d')
+    def job():
+        os.system('python3 -m src.collector.theme_crawler')
+        os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    threading.Thread(target=job).start()
+    return jsonify({'last_theme_refresh': today})
+
+@app.route('/api/refresh/industry', methods=['POST'])
+def refresh_industry():
+    today = datetime.now().strftime('%Y-%m-%d')
+    def job():
+        os.system('python3 -m src.collector.industry_crawler')
+        os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    threading.Thread(target=job).start()
+    return jsonify({'last_industry_refresh': today})
+
 @app.route('/api/sector/<sector_type>/<int:sector_id>/chart')
 def get_sector_chart(sector_type, sector_id):
     days = int(request.args.get('days', 60))
@@ -524,6 +542,7 @@ def stock_detail():
     market_cap = ''
     market_type = ''
     listed_date = ''
+    rebound_rate = None
     # DB에서 종목 정보/시세/업종/테마/뉴스 쿼리
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
@@ -546,6 +565,12 @@ def stock_detail():
                 'market_cap': row[4]
             }
             market_cap = row[4]
+        # 60일 저점 반등률 계산
+        cursor.execute("SELECT MIN(low_price) FROM DailyStocks WHERE stock_code = ? AND date >= date('now', '-59 day')", (code,))
+        min_low_60d = cursor.fetchone()[0]
+        close_price = price_info.get('close_price') if price_info else None
+        if min_low_60d and close_price and min_low_60d > 0:
+            rebound_rate = round((close_price - min_low_60d) / min_low_60d * 100, 2)
         # 업종
         cursor.execute("SELECT im.industry_name FROM industry_stock_mapping ism JOIN industry_master im ON ism.industry_id = im.industry_id WHERE ism.stock_code = ? LIMIT 1", (code,))
         row = cursor.fetchone()
@@ -571,7 +596,8 @@ def stock_detail():
         change_rate=price_info.get('change_rate', '정보 없음'),
         volume=price_info.get('volume', '정보 없음'),
         trading_value=price_info.get('trading_value', '정보 없음'),
-        news_list=news_list
+        news_list=news_list,
+        rebound_rate=rebound_rate
     )
 
 @app.route('/api/stock/<code>/ohlcv')
