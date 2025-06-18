@@ -146,3 +146,27 @@ CREATE TABLE IF NOT EXISTS DailyStocks (
 -- 인덱스 추가
 CREATE INDEX IF NOT EXISTS idx_daily_stocks_date ON DailyStocks(date);
 CREATE INDEX IF NOT EXISTS idx_daily_stocks_code_date ON DailyStocks(stock_code, date);
+
+-- 기업개요 정보 테이블
+CREATE TABLE IF NOT EXISTS company_info (
+    ticker VARCHAR(10) PRIMARY KEY,
+    description TEXT,
+    updated_at DATE,
+    FOREIGN KEY (ticker) REFERENCES Stocks(stock_code)
+);
+
+-- 재무정보 테이블
+CREATE TABLE IF NOT EXISTS financial_info (
+    ticker VARCHAR(10),
+    year VARCHAR(4),
+    revenue BIGINT,
+    operating_profit BIGINT,
+    net_income BIGINT,
+    updated_at DATE,
+    PRIMARY KEY (ticker, year),
+    FOREIGN KEY (ticker) REFERENCES Stocks(stock_code)
+);
+
+-- 인덱스 추가
+CREATE INDEX IF NOT EXISTS idx_financial_info_year ON financial_info(year);
+CREATE INDEX IF NOT EXISTS idx_company_info_updated ON company_info(updated_at);
