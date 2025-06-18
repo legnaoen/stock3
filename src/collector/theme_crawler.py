@@ -80,7 +80,7 @@ def upsert_themes(theme_list):
                 print(f"  - [신규] {th['theme_code']}: {th['theme_name']}")
                 conn.execute(
                     """
-                    INSERT INTO theme_master 
+                    INSERT OR REPLACE INTO theme_master 
                     (theme_id, theme_name, category, updated_at)
                     VALUES (?, ?, 'THEME', CURRENT_TIMESTAMP)
                     """,

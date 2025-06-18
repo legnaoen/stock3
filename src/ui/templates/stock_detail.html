@@ -52,7 +52,16 @@
     <ul id="news-list" class="list-group mb-3">
         {% if news_list and news_list|length > 0 %}
             {% for news in news_list %}
-                <li class="list-group-item"><a href="{{ news.url }}" target="_blank">{{ news.title }}</a></li>
+                <li class="list-group-item">
+                  <a href="{{ news.url }}" target="_blank">{{ news.title }}</a>
+                  <span class="news-date text-muted small ms-2">
+                    {% if news.days_diff == 0 %}오늘
+                    {% elif news.days_diff is not none and 1 <= news.days_diff <= 5 %}{{ news.days_diff }}일전
+                    {% else %}{{ news.date }}
+                    {% endif %}
+                  </span>
+                  {% if news.summary %}<div class="news-summary text-muted small mt-1">{{ news.summary }}</div>{% endif %}
+                </li>
             {% endfor %}
         {% else %}
             <li class="list-group-item dummy">뉴스 정보 없음 (크롤러 실행 시 최신 뉴스 표시)</li>
@@ -71,8 +80,50 @@
 <script>
 let priceChart = null;
 function crawlNews() {
-    alert('뉴스 크롤러 실행 (추후 연동)');
-    // 실제 연동 시 fetch('/api/stock_news_crawl?code=...') 등으로 구현
+    const btn = event.target;
+    const code = document.getElementById('stock-code').textContent.replace(/[()]/g, '');
+    btn.disabled = true;
+    const original = btn.innerHTML;
+    btn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>크롤링 중...';
+    fetch(`/api/stock/${code}/crawl_news`, { method: 'POST' })
+        .then(res => res.json())
+        .then(data => {
+            if (data.status === 'success') {
+                alert(data.message);
+                loadNewsList(code);
+            } else {
+                alert(data.message || '크롤링 실패');
+            }
+        })
+        .catch(e => {
+            alert('크롤링 중 오류 발생: ' + e);
+        })
+        .finally(() => {
+            btn.disabled = false;
+            btn.innerHTML = original;
+        });
+}
+function loadNewsList(code) {
+    fetch(`/api/stock/${code}/news`)
+        .then(res => res.json())
+        .then(data => {
+            const newsList = document.getElementById('news-list');
+            if (!data.news || data.news.length === 0) {
+                newsList.innerHTML = '<li class="list-group-item dummy">뉴스 정보 없음 (크롤러 실행 시 최신 뉴스 표시)</li>';
+                return;
+            }
+            newsList.innerHTML = data.news.map(n => {
+                let dateStr = '';
+                if (n.days_diff === 0) {
+                  dateStr = '오늘';
+                } else if (n.days_diff !== null && n.days_diff >= 1 && n.days_diff <= 5) {
+                  dateStr = `${n.days_diff}일전`;
+                } else {
+                  dateStr = n.date;
+                }
+                return `<li class="list-group-item"><a href="${n.url}" target="_blank">${n.title}</a><span class='news-date text-muted small ms-2'>${dateStr}</span>${n.summary ? `<div class='news-summary text-muted small mt-1'>${n.summary}</div>` : ''}</li>`;
+            }).join('');
+        });
 }
 function renderCandleChart(code) {
     fetch(`/api/stock/${code}/ohlcv?days=60`)

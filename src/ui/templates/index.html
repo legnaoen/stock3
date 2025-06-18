@@ -19,7 +19,7 @@
         .change-rate-down { color: #0d6efd; }
         
         .refresh-button {
-            margin-left: 10px;
+            margin-left: 0px;
         }
         
         .leader-stocks {
@@ -40,6 +40,23 @@
         .table a {
             text-decoration: none;
         }
+
+        /* 버튼 높이 통일 (refresh-controls 영역 한정) */
+        .refresh-controls .btn, .refresh-controls .btn-group {
+            height: 38px;
+            min-height: 38px;
+            padding-top: 6px;
+            padding-bottom: 6px;
+            display: flex;
+            align-items: center;
+        }
+        .refresh-controls .btn-group .btn {
+            display: flex;
+            align-items: center;
+        }
+        .refresh-controls {
+            gap: 10px;
+        }
     </style>
 </head>
 <body>
@@ -52,9 +69,18 @@
                     <span id="dateText">기준일: </span>
                 </div>
                 <div>
-                    <button class="btn btn-primary refresh-button" id="quickRefreshBtn" onclick="refreshQuick()" title="주가/성과만 빠르게 갱신">빠른 새로고침</button>
-                    <button class="btn btn-secondary refresh-button" id="fullRefreshBtn" onclick="refreshFull()" title="테마/업종/주가/성과 전체 갱신">전체 데이터 갱신</button>
-                    <span id="lastFullRefresh" style="font-size:0.9em; color:#888; margin-left:10px;">(마지막 전체갱신: -)</span>
+                    <div class="refresh-controls d-flex align-items-center">
+                        <button class="btn btn-primary refresh-button" id="quickRefreshBtn" onclick="refreshQuick()" title="주가/성과만 빠르게 갱신">빠른 새로고침</button>
+                        <div class="btn-group refresh-button">
+                            <button type="button" class="btn btn-secondary dropdown-toggle" id="fullRefreshBtn" data-bs-toggle="dropdown" aria-expanded="false" title="데이터 갱신 옵션">
+                                <span style="font-size:1.2em;">&#8942;</span>
+                            </button>
+                            <ul class="dropdown-menu dropdown-menu-end">
+                                <li><a class="dropdown-item" id="themeRefreshBtn" href="#">테마정보 업데이트</a></li>
+                                <li><a class="dropdown-item" id="industryRefreshBtn" href="#">업종정보 업데이트</a></li>
+                            </ul>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
@@ -276,23 +302,6 @@
             setLoading(false);
         }
 
-        // 전체 데이터 갱신: 테마/업종/주가/성과 전체
-        async function refreshFull() {
-            setLoading(true);
-            try {
-                const res = await fetch('/api/refresh/full', { method: 'POST' });
-                const data = await res.json();
-                // 마지막 전체갱신일 표시
-                document.getElementById('lastFullRefresh').textContent = '(마지막 전체갱신: ' + data.last_full_refresh + ')';
-                // 현재 탭 데이터만 다시 로드
-                const activeTab = document.querySelector('.tab-pane.active');
-                loadData(activeTab.id);
-            } catch (e) {
-                alert('전체 데이터 갱신 실패');
-            }
-            setLoading(false);
-        }
-
         // 로딩 표시 함수(간단)
         function setLoading(isLoading) {
             document.getElementById('quickRefreshBtn').disabled = isLoading;
@@ -338,7 +347,34 @@
         document.addEventListener('DOMContentLoaded', function() {
             // ... 기존 탭 이벤트 ...
             document.querySelector('a[href="#rebound"]').addEventListener('show.bs.tab', loadReboundData);
+            const themeRefreshBtn = document.getElementById('themeRefreshBtn');
+            const industryRefreshBtn = document.getElementById('industryRefreshBtn');
+            if (themeRefreshBtn) themeRefreshBtn.addEventListener('click', function(e) { e.preventDefault(); refreshTheme(); });
+            if (industryRefreshBtn) industryRefreshBtn.addEventListener('click', function(e) { e.preventDefault(); refreshIndustry(); });
         });
+
+        async function refreshTheme() {
+            setLoading(true);
+            try {
+                const res = await fetch('/api/refresh/theme', { method: 'POST' });
+                const activeTab = document.querySelector('.tab-pane.active');
+                loadData(activeTab.id);
+            } catch (e) {
+                alert('테마정보 업데이트 실패');
+            }
+            setLoading(false);
+        }
+        async function refreshIndustry() {
+            setLoading(true);
+            try {
+                const res = await fetch('/api/refresh/industry', { method: 'POST' });
+                const activeTab = document.querySelector('.tab-pane.active');
+                loadData(activeTab.id);
+            } catch (e) {
+                alert('업종정보 업데이트 실패');
+            }
+            setLoading(false);
+        }
 
         // 초기 데이터 로드
         document.addEventListener('DOMContentLoaded', () => {

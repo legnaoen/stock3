@@ -69,6 +69,7 @@
 | 2025-06-17 | [작성자]    | 테마 등락률 계산 방식 변경 | 네이버 테마 지수와의 정합성 개선 |
 | 2025-06-18 | [작성자]    | krx_collector.py fill_missing_history() 과거 시세 백필 기능 실전 적용, 파생지표(60일 저점, 5일 평균 거래대금) 보충, 안전장치/예외처리/운영 이력 상세화 | 실전 데이터 자동화/분석 파이프라인 확장, 운영 안전성 강화 |
 | 2025-06-18 | [작성자]    | UI/차트/상세페이지 개선: 업종/테마 등락률 연동, 종목상세 내부링크, 캔들차트 한국식 컬러 등 최신화 | 실전 운영/UX 개선 |
+| 2025-06-18 | [작성자]    | Python import 오류 해결: UI(app.py) 등 모든 실행은 반드시 프로젝트 루트에서 `python -m src.ui.app` 방식으로 실행, sys.path 및 from src.xxx import 패턴 공식화. 뉴스크롤러-UI 연동 정상화. | 운영/실행 표준 SSOT 반영 |
 
 ---
 
@@ -115,6 +116,21 @@ stock-analytics/
 - Python 타입힌트, mypy, flake8, black 등 적용
 - DB 스키마/ERD/문서화 필수, 테스트 코드 분리
 - 대량 데이터 인덱싱/파티셔닝 등 성능 최적화
+
+### 4.x 운영/실행 표준 (Python import/실행)
+
+- 모든 파이썬 스크립트/서버 실행은 반드시 프로젝트 루트(예: stock-3)에서 아래와 같이 실행한다:
+  - `python -m src.ui.app` (Flask UI)
+  - `python -m src.main` (메인 파이프라인 등)
+- import는 항상 `from src.xxx` 패턴을 사용한다. (상대 import, 혼용 금지)
+- src/ui/app.py 등 스크립트 상단에는 아래 코드로 sys.path를 패치한다:
+  ```python
+  import sys, os
+  sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
+  ```
+- (참고) `python src/ui/app.py` 등 하위 폴더에서 직접 실행 시 import 오류 발생하므로 금지
+- 뉴스크롤러 등 기존 모듈을 UI/서버에 연동할 때도 위 표준을 반드시 따른다
+- 본 표준은 실전 운영/테스트/배포 환경에서 일관성, 유지보수성, 협업 효율을 보장하기 위함
 
 ---
 

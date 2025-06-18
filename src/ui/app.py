@@ -1,15 +1,15 @@
+import sys
+import os
+sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
 from flask import Flask, jsonify, render_template, request
 import sqlite3
-import os
-import sys
 from datetime import datetime, timedelta
 import threading
 import re
-
-# Add src to Python path for imports
-sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from utils.market_time import get_market_date, is_market_open, get_market_status
-from api.sector_api import sector_api
+from src.utils.market_time import get_market_date, is_market_open, get_market_status
+from src.api.sector_api import sector_api
+from src.collector.news_crawler import crawl_naver_news_for_stock
+import datetime
 
 app = Flask(__name__)
 app.register_blueprint(sector_api)
@@ -582,8 +582,17 @@ def stock_detail():
         if row:
             theme = row[0]
         # 뉴스(최신 5개)
-        cursor.execute("SELECT title, url FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 5", (code,))
-        news_list = [{'title': r[0], 'url': r[1]} for r in cursor.fetchall()]
+        cursor.execute("SELECT title, summary, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 5", (code,))
+        today = datetime.date.today()
+        news_list = []
+        for r in cursor.fetchall():
+            news_date = r[3]
+            try:
+                news_date_obj = datetime.datetime.strptime(news_date, '%Y-%m-%d').date()
+                days_diff = (today - news_date_obj).days
+            except Exception:
+                days_diff = None
+            news_list.append({'title': r[0], 'summary': r[1], 'url': r[2], 'date': news_date, 'days_diff': days_diff})
     return render_template('stock_detail.html',
         stock_name=stock_info.get('name', '정보 없음'),
         stock_code=code,
@@ -620,6 +629,54 @@ def get_stock_ohlcv(code):
         'close': [r[4] for r in rows],
         'volume': [r[5] for r in rows]
     })
+
+@app.route('/api/stock/<code>/crawl_news', methods=['POST'])
+def crawl_news_api(code):
+    try:
+        # 종목명 조회
+        with sqlite3.connect(DB_PATH) as conn:
+            cursor = conn.cursor()
+            cursor.execute("SELECT stock_name FROM Stocks WHERE stock_code = ?", (code,))
+            row = cursor.fetchone()
+            if not row:
+                return jsonify({'status': 'error', 'message': '종목명을 찾을 수 없습니다.'}), 404
+            stock_name = row[0]
+        date = get_market_date()
+        result = {'status': 'pending', 'message': '크롤링 시작'}
+        def job():
+            try:
+                news_count = crawl_naver_news_for_stock(code, stock_name, date, DB_PATH)
+                result['status'] = 'success'
+                result['news_count'] = news_count
+                result['message'] = f'크롤링 완료: {news_count}건'
+            except Exception as e:
+                result['status'] = 'error'
+                result['message'] = f'크롤링 실패: {str(e)}'
+        t = threading.Thread(target=job)
+        t.start()
+        t.join(timeout=30)  # 30초 제한
+        if result['status'] == 'pending':
+            return jsonify({'status': 'pending', 'message': '크롤링이 지연되고 있습니다.'})
+        return jsonify(result)
+    except Exception as e:
+        return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/api/stock/<code>/news')
+def get_stock_news_api(code):
+    with sqlite3.connect(DB_PATH) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT title, summary, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 5", (code,))
+        today = datetime.date.today()
+        news = []
+        for r in cursor.fetchall():
+            news_date = r[3]
+            try:
+                news_date_obj = datetime.datetime.strptime(news_date, '%Y-%m-%d').date()
+                days_diff = (today - news_date_obj).days
+            except Exception:
+                days_diff = None
+            news.append({'title': r[0], 'summary': r[1], 'url': r[2], 'date': news_date, 'days_diff': days_diff})
+    return jsonify({'news': news})
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

@@ -53,20 +53,24 @@ class NaverNewsCrawler:
                 self.wait.until(
                     EC.presence_of_all_elements_located((By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-ellipsis-1.sds-comps-text-type-headline1'))
                 )
-                headline_spans = self.driver.find_elements(By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-ellipsis-1.sds-comps-text-type-headline1')
-                for span in headline_spans[:max_articles*2]:
-                    parent_a = span.find_element(By.XPATH, './ancestor::a[1]')
-                    link = parent_a.get_attribute('href')
-                    title = span.text.strip()
+                card_divs = self.driver.find_elements(By.CSS_SELECTOR, 'div.sds-comps-vertical-layout.sds-comps-full-layout')
+                for card_div in card_divs:
                     try:
-                        summary_span = parent_a.find_element(By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-ellipsis-3.sds-comps-text-type-body1')
+                        headline_span = card_div.find_element(By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-ellipsis-1.sds-comps-text-type-headline1')
+                        parent_a = headline_span.find_element(By.XPATH, './ancestor::a[1]')
+                        link = parent_a.get_attribute('href')
+                        title = headline_span.text.strip()
+                    except Exception:
+                        continue
+                    try:
+                        summary_span = card_div.find_element(By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-ellipsis-3.sds-comps-text-type-body1')
                         summary = summary_span.text.strip()
                     except Exception:
                         summary = ''
                     date = ''
                     for up in range(1, 4):
                         try:
-                            ancestor_div = span.find_element(By.XPATH, f'./ancestor::div[{up}]')
+                            ancestor_div = headline_span.find_element(By.XPATH, f'./ancestor::div[{up}]')
                             time_spans = ancestor_div.find_elements(By.CSS_SELECTOR, 'span.sds-comps-text.sds-comps-text-type-body2.sds-comps-text-weight-sm')
                             for tspan in time_spans:
                                 ttext = tspan.text.strip()
