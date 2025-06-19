@@ -478,6 +478,21 @@ def get_rebound_performance():
         results = []
         for row in rows:
             stock_code = row[0]
+            # 뉴스 3개 쿼리
+            cursor.execute("SELECT title, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 3", (stock_code,))
+            news_rows = cursor.fetchall()
+            today = datetime.today().date()
+            news_list = []
+            for n in news_rows:
+                news_date = n[2]
+                try:
+                    news_date_obj = datetime.strptime(news_date, '%Y-%m-%d').date()
+                    days_diff = (today - news_date_obj).days
+                except Exception:
+                    days_diff = None
+                news_list.append({
+                    "title": n[0], "url": n[1], "date": n[2], "days_diff": days_diff
+                })
             results.append({
                 'code': stock_code,
                 'name': row[1],
@@ -486,7 +501,8 @@ def get_rebound_performance():
                 'rebound_rate': row[4],
                 'avg_trading_value_5d': row[5],
                 'industry': row[6] if row[6] else '',
-                'theme': ','.join([t['theme_name'] for t in get_themes_for_stock(stock_code)])
+                'theme': ','.join([t['theme_name'] for t in get_themes_for_stock(stock_code)]),
+                'news': news_list
             })
         return jsonify({'market_status': get_market_status(), 'date': date, 'data': results})
 
@@ -573,6 +589,19 @@ def extract_common_stock_name(stock_name):
     # 공백, 괄호, 숫자, 영문자 등 변형 포함
     return re.sub(r'( ?[0-9]*우([A-Z]|\([^)]+\))?)$', '', stock_name)
 
+def preprocess_theme(theme_text):
+    """
+    테마 텍스트에서 괄호와 그 안의 내용을 제거하고 쉼표로 분리하는 함수
+    예: "게임,모바일게임(스마트폰),메타버스(Metaverse)" -> ["게임", "모바일게임", "메타버스"]
+    """
+    import re
+    # 괄호와 그 안의 내용을 제거
+    cleaned_text = re.sub(r'\([^)]*\)', '', theme_text)
+    # 쉼표로 분리하고 각 항목의 앞뒤 공백 제거
+    themes = [theme.strip() for theme in cleaned_text.split(',')]
+    # 빈 문자열 제거
+    return [theme for theme in themes if theme]
+
 def get_themes_for_stock(stock_code):
     """
     종목코드에 해당하는 테마 리스트 반환. 우선주면 본주 테마를 공유.
@@ -598,7 +627,16 @@ def get_themes_for_stock(stock_code):
             JOIN theme_master m ON t.theme_id = m.theme_id
             WHERE t.stock_code = ?
         """, (main_code,))
-        return [dict(theme_id=r[0], theme_name=r[1]) for r in cursor.fetchall()]
+        # 테마명 전처리 적용
+        themes = []
+        for r in cursor.fetchall():
+            theme_id = r[0]
+            theme_name = r[1]
+            # 각 테마명에서 괄호 제거
+            processed_themes = preprocess_theme(theme_name)
+            for pt in processed_themes:
+                themes.append(dict(theme_id=theme_id, theme_name=pt))
+        return themes
 
 @app.route('/stock_detail')
 def stock_detail():
@@ -844,6 +882,54 @@ def update_financial_api(code):
     except Exception as e:
         print(f"[update_financial_api] Exception: {e}")
         return jsonify({'status': 'error', 'message': str(e)}), 500
+
+@app.route('/theme_filter_demo')
+def theme_filter_demo():
+    # 테마 예시 데이터
+    sample_themes = [
+        "게임,모바일게임(스마트폰),메타버스(Metaverse)",
+        "웹툰,NFT(대체불가토큰)",
+        "2차전지(이차전지),전기차(EV),자율주행",
+        "반도체,AI(인공지능),로봇"
+    ]
+    
+    # 모든 테마를 전처리하고 중복 제거
+    all_themes = set()
+    for theme_group in sample_themes:
+        all_themes.update(preprocess_theme(theme_group))
+    
+    # 정렬된 고유 테마 리스트
+    unique_themes = sorted(list(all_themes))
+    
+    # 샘플 종목 데이터 (테마는 전처리된 형태로)
+    sample_stocks = [
+        {
+            'name': '삼성전자',
+            'price': '72,000',
+            'change_rate': '+8.5%',
+            'volume': '12,345,678',
+            'themes': preprocess_theme("반도체,AI(인공지능)"),
+            'news': '반도체 신기술 개발 발표 (오늘)'
+        },
+        {
+            'name': 'LG에너지솔루션',
+            'price': '458,000',
+            'change_rate': '+5.2%',
+            'volume': '890,123',
+            'themes': preprocess_theme("2차전지(이차전지),전기차(EV)"),
+            'news': '신규 배터리 공장 건설 (1일전)'
+        },
+        {
+            'name': '엔씨소프트',
+            'price': '235,000',
+            'change_rate': '+4.8%',
+            'volume': '567,890',
+            'themes': preprocess_theme("게임,모바일게임(스마트폰),메타버스(Metaverse)"),
+            'news': '신작 게임 출시 발표 (2023-06-15)'
+        }
+    ]
+    
+    return render_template('theme_filter_demo.html', themes=unique_themes, stocks=sample_stocks)
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

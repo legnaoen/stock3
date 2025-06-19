@@ -131,6 +131,16 @@
         .clear-filters:hover {
             color: #495057;
         }
+
+        /* 급등주/저점반등주 뉴스 링크 컬러 */
+        #surgeData a, #reboundData a {
+            color: #222;
+            text-decoration: none;
+        }
+        #surgeData a:hover, #reboundData a:hover {
+            color: #007bff;
+            text-decoration: underline;
+        }
     </style>
 </head>
 <body>
@@ -249,10 +259,10 @@
                     <table class="table table-hover">
                         <thead>
                             <tr>
-                                <th>종목명</th>
-                                <th>등락률</th>
-                                <th>업종</th>
-                                <th>테마</th>
+                                <th style="width:100px;">종목명</th>
+                                <th style="width:80px;">등락률</th>
+                                <th style="width:100px;">업종</th>
+                                <th style="width:200px;">테마</th>
                                 <th>뉴스</th>
                             </tr>
                         </thead>
