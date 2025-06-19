@@ -364,7 +364,7 @@ def get_theme_performance():
 @app.route('/api/performance/surge')
 def get_surge_performance():
     """
-    상위 20개 급등주 데이터
+    상위 20개 급등주 데이터 + 종목별 최신 뉴스 3개 포함
     """
     date = get_market_date()
     with sqlite3.connect(DB_PATH) as conn:
@@ -388,12 +388,28 @@ def get_surge_performance():
         results = []
         for row in rows:
             stock_code = row[0]
+            # 뉴스 3개 쿼리
+            cursor.execute("SELECT title, url, date FROM stock_news WHERE stock_code = ? ORDER BY date DESC, id DESC LIMIT 3", (stock_code,))
+            news_rows = cursor.fetchall()
+            today = datetime.today().date()
+            news_list = []
+            for n in news_rows:
+                news_date = n[2]
+                try:
+                    news_date_obj = datetime.strptime(news_date, '%Y-%m-%d').date()
+                    days_diff = (today - news_date_obj).days
+                except Exception:
+                    days_diff = None
+                news_list.append({
+                    "title": n[0], "url": n[1], "date": n[2], "days_diff": days_diff
+                })
             results.append({
                 'code': stock_code,
                 'name': row[1],
                 'change_rate': row[2],
                 'industry': row[3] if row[3] else '',
-                'theme': ','.join([t['theme_name'] for t in get_themes_for_stock(stock_code)])
+                'theme': ','.join([t['theme_name'] for t in get_themes_for_stock(stock_code)]),
+                'news': news_list
             })
         return jsonify({'market_status': get_market_status(), 'date': date, 'data': results})
 
@@ -488,40 +504,34 @@ def refresh_quick():
 def refresh_full():
     today = datetime.now().strftime('%Y-%m-%d')
     now = datetime.now()
-    # 업종 갱신 제한 (한달 이내면 스킵)
     do_industry = True
     if last_industry_refresh['date']:
         last = datetime.strptime(last_industry_refresh['date'], '%Y-%m-%d')
         if (now - last).days < 30:
             do_industry = False
-    def job():
-        os.system('python3 -m src.collector.theme_crawler')
-        if do_industry:
-            os.system('python3 -m src.collector.industry_crawler')
-            last_industry_refresh['date'] = today
-        os.system('python3 -m src.collector.krx_collector')
-        os.system('python3 -m src.analyzer.sector_theme_analyzer')
-        last_full_refresh['date'] = today
-    threading.Thread(target=job).start()
-    # 반환: 마지막 전체갱신일
+    # 동기식 실행
+    os.system('python3 -m src.collector.theme_crawler')
+    if do_industry:
+        os.system('python3 -m src.collector.industry_crawler')
+        last_industry_refresh['date'] = today
+    os.system('python3 -m src.collector.krx_collector')
+    os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    last_full_refresh['date'] = today
     return jsonify({'last_full_refresh': last_full_refresh['date'] or '-'})
 
 @app.route('/api/refresh/theme', methods=['POST'])
 def refresh_theme():
     today = datetime.now().strftime('%Y-%m-%d')
-    def job():
-        os.system('python3 -m src.collector.theme_crawler')
-        os.system('python3 -m src.analyzer.sector_theme_analyzer')
-    threading.Thread(target=job).start()
+    # 동기식 실행: 실제 작업이 끝난 후 응답 반환
+    os.system('python3 -m src.collector.theme_crawler')
+    os.system('python3 -m src.analyzer.sector_theme_analyzer')
     return jsonify({'last_theme_refresh': today})
 
 @app.route('/api/refresh/industry', methods=['POST'])
 def refresh_industry():
     today = datetime.now().strftime('%Y-%m-%d')
-    def job():
-        os.system('python3 -m src.collector.industry_crawler')
-        os.system('python3 -m src.analyzer.sector_theme_analyzer')
-    threading.Thread(target=job).start()
+    os.system('python3 -m src.collector.industry_crawler')
+    os.system('python3 -m src.analyzer.sector_theme_analyzer')
     return jsonify({'last_industry_refresh': today})
 
 @app.route('/api/sector/<sector_type>/<int:sector_id>/chart')

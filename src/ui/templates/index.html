@@ -190,6 +190,7 @@
                             <th>등락률</th>
                             <th>업종</th>
                             <th>테마</th>
+                            <th>뉴스</th>
                         </tr>
                     </thead>
                     <tbody id="surgeData"></tbody>
@@ -310,23 +311,37 @@
         }
 
         // 빠른 새로고침: 주가/성과만 갱신
-        async function refreshQuick() {
-            setLoading(true);
-            try {
-                await fetch('/api/refresh/quick', { method: 'POST' });
-                // 현재 탭 데이터만 다시 로드
-                const activeTab = document.querySelector('.tab-pane.active');
-                loadData(activeTab.id);
-            } catch (e) {
-                alert('빠른 새로고침 실패');
+        function setLoading(isLoading, target) {
+            const quickBtn = document.getElementById('quickRefreshBtn');
+            const fullBtn = document.getElementById('fullRefreshBtn');
+            if (target === 'quick') {
+                if (isLoading) {
+                    quickBtn.disabled = true;
+                    quickBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>진행중...';
+                } else {
+                    quickBtn.disabled = false;
+                    quickBtn.innerHTML = '빠른 새로고침';
+                }
+            } else if (target === 'full') {
+                if (isLoading) {
+                    fullBtn.disabled = true;
+                    fullBtn.innerHTML = '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>진행중...';
+                } else {
+                    fullBtn.disabled = false;
+                    fullBtn.innerHTML = '<span style="font-size:1.2em;">&#8942;</span>';
+                }
             }
-            setLoading(false);
         }
 
-        // 로딩 표시 함수(간단)
-        function setLoading(isLoading) {
-            document.getElementById('quickRefreshBtn').disabled = isLoading;
-            document.getElementById('fullRefreshBtn').disabled = isLoading;
+        async function refreshQuick() {
+            setLoading(true, 'quick');
+            try {
+                await fetch('/api/refresh/quick', { method: 'POST' });
+                setTimeout(() => { location.reload(); }, 2000);
+            } catch (e) {
+                alert('빠른 새로고침 실패');
+                setLoading(false, 'quick');
+            }
         }
 
         // 탭 변경 이벤트 핸들러 수정
@@ -398,26 +413,24 @@
         });
 
         async function refreshTheme() {
-            setLoading(true);
+            setLoading(true, 'full');
             try {
-                const res = await fetch('/api/refresh/theme', { method: 'POST' });
-                const activeTab = document.querySelector('.tab-pane.active');
-                loadData(activeTab.id);
+                await fetch('/api/refresh/theme', { method: 'POST' });
+                setTimeout(() => { location.reload(); }, 2000);
             } catch (e) {
                 alert('테마정보 업데이트 실패');
+                setLoading(false, 'full');
             }
-            setLoading(false);
         }
         async function refreshIndustry() {
-            setLoading(true);
+            setLoading(true, 'full');
             try {
-                const res = await fetch('/api/refresh/industry', { method: 'POST' });
-                const activeTab = document.querySelector('.tab-pane.active');
-                loadData(activeTab.id);
+                await fetch('/api/refresh/industry', { method: 'POST' });
+                setTimeout(() => { location.reload(); }, 2000);
             } catch (e) {
                 alert('업종정보 업데이트 실패');
+                setLoading(false, 'full');
             }
-            setLoading(false);
         }
 
         // 급등주 데이터 로드
@@ -425,26 +438,37 @@
             try {
                 const response = await fetch('/api/performance/surge');
                 const data = await response.json();
-                
                 if (data.market_status) {
                     updateMarketStatus(data.market_status);
                 }
-                
                 const tbody = document.getElementById('surgeData');
                 tbody.innerHTML = '';
-                
                 if (!data.data || data.data.length === 0) {
-                    tbody.innerHTML = '<tr><td colspan="4" class="text-center">데이터 없음</td></tr>';
+                    tbody.innerHTML = '<tr><td colspan="5" class="text-center">데이터 없음</td></tr>';
                     return;
                 }
-                
                 data.data.forEach(item => {
+                    let newsHtml = '-';
+                    if (item.news && item.news.length > 0) {
+                        newsHtml = item.news.map(n => {
+                            let dateStr = '';
+                            if (n.days_diff === 0) {
+                                dateStr = '오늘';
+                            } else if (n.days_diff !== null && n.days_diff >= 1 && n.days_diff <= 5) {
+                                dateStr = `${n.days_diff}일전`;
+                            } else {
+                                dateStr = n.date;
+                            }
+                            return `<a href="${n.url}" target="_blank">${n.title} (${dateStr})</a>`;
+                        }).join('<br>');
+                    }
                     tbody.innerHTML += `
                         <tr>
                             <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
                             <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                             <td>${item.industry || '-'}</td>
                             <td>${item.theme || '-'}</td>
+                            <td>${newsHtml}</td>
                         </tr>
                     `;
                 });
