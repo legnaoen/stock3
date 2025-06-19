@@ -368,8 +368,8 @@
                     data.forEach(row => {
                         tbody.innerHTML += `
                             <tr>
-                                <td>${row.name}</td>
-                                <td>${formatChangeRate(row.change_rate)}</td>
+                                <td><a href="/stock_detail?code=${row.code}">${row.name}</a></td>
+                                <td class="${row.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${row.change_rate.toFixed(2)}%</td>
                                 <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
                                 <td>${row.industry || '-'}</td>
                                 <td>${row.theme || '-'}</td>
@@ -441,7 +441,7 @@
                 data.data.forEach(item => {
                     tbody.innerHTML += `
                         <tr>
-                            <td>${item.name}</td>
+                            <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
                             <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                             <td>${item.industry || '-'}</td>
                             <td>${item.theme || '-'}</td>
@@ -475,15 +475,20 @@
                     rankTd.appendChild(newSpan);
                 } else if (item.rank.change !== null) {
                     const changeSpan = document.createElement('span');
-                    changeSpan.className = `rank-change ${item.rank.change > 0 ? 'down' : 'up'}`;
-                    changeSpan.textContent = item.rank.change > 0 ? `▼${item.rank.change}` : `▲${-item.rank.change}`;
+                    if (item.rank.change > 0) {
+                        changeSpan.className = 'rank-change up';
+                        changeSpan.textContent = `▲${item.rank.change}`;
+                    } else if (item.rank.change < 0) {
+                        changeSpan.className = 'rank-change down';
+                        changeSpan.textContent = `▼${-item.rank.change}`;
+                    }
                     rankTd.appendChild(changeSpan);
                 }
                 tr.appendChild(rankTd);
                 
                 // 기존 컬럼들 추가
                 tr.innerHTML += `
-                    <td>${item.name}</td>
+                    <td><a href="/sector_detail?type=industry&id=${encodeURIComponent(item.id || item.name)}">${item.name}</a></td>
                     <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                     <td>${item.up_stocks}/${item.down_stocks}</td>
                     <td class="text-right">${formatNumber(item.market_cap)}</td>
@@ -517,15 +522,20 @@
                     rankTd.appendChild(newSpan);
                 } else if (item.rank.change !== null) {
                     const changeSpan = document.createElement('span');
-                    changeSpan.className = `rank-change ${item.rank.change > 0 ? 'down' : 'up'}`;
-                    changeSpan.textContent = item.rank.change > 0 ? `▼${item.rank.change}` : `▲${-item.rank.change}`;
+                    if (item.rank.change > 0) {
+                        changeSpan.className = 'rank-change up';
+                        changeSpan.textContent = `▲${item.rank.change}`;
+                    } else if (item.rank.change < 0) {
+                        changeSpan.className = 'rank-change down';
+                        changeSpan.textContent = `▼${-item.rank.change}`;
+                    }
                     rankTd.appendChild(changeSpan);
                 }
                 tr.appendChild(rankTd);
                 
                 // 기존 컬럼들 추가
                 tr.innerHTML += `
-                    <td>${item.name}</td>
+                    <td><a href="/sector_detail?type=theme&id=${encodeURIComponent(item.id || item.name)}">${item.name}</a></td>
                     <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                     <td>${item.up_stocks}/${item.down_stocks}</td>
                     <td class="text-right">${formatNumber(item.market_cap)}</td>
