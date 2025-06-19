@@ -684,23 +684,25 @@ def stock_detail():
         all_labels = list(annual_labels) + list(quarterly_labels)
         cursor.execute("SELECT * FROM financial_evaluation WHERE ticker = ? ORDER BY eval_date DESC, created_at DESC LIMIT 1", (code,))
         financial_evaluation = cursor.fetchone()
-        eval_details = None
+        eval_details = {}
         if financial_evaluation and financial_evaluation[9]:
             import json
             try:
                 details = json.loads(financial_evaluation[9])
-                eval_details = {}
                 for area in ['growth', 'profitability', 'stability', 'market_value']:
                     if area in details:
-                        # 여러 평가 중 가장 낮은 점수의 description을 대표로 사용
                         evals = details[area].get('evaluations', [])
                         if evals:
                             min_eval = min(evals, key=lambda x: x.get('score', 5))
-                            eval_details[area] = {'description': min_eval.get('description', '-')}
+                            eval_details[area] = {
+                                'description': min_eval.get('description', '-'),
+                                'grade': details.get(f"{area}_grade", '-')
+                            }
                         else:
-                            eval_details[area] = {'description': '-'}
+                            eval_details[area] = {'description': '-', 'grade': details.get(f"{area}_grade", '-')}
                     else:
-                        eval_details[area] = {'description': '-'}
+                        eval_details[area] = {'description': '-', 'grade': details.get(f"{area}_grade", '-')}
+                eval_details['total_grade'] = details.get('total_grade', '-')
             except Exception:
                 eval_details = None
     return render_template('stock_detail.html',
