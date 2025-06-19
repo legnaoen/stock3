@@ -348,9 +348,7 @@ function updateFinancial() {
     .then(res => res.json())
     .then(data => {
       if (data.status === 'success') {
-        alert(data.message || '재무정보가 갱신되었습니다.');
-        renderFinancialSummary(data.financial_evaluation);
-        renderFinancialInfo(data.financial_info);
+        window.location.reload();
       } else {
         alert(data.message || '재무정보 갱신 실패');
         console.error('재무 업데이트 실패:', data);

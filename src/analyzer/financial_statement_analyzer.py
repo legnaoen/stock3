@@ -46,53 +46,54 @@ class FinancialStatementAnalyzer:
         }
         
     def _init_thresholds(self):
-        """평가 기준값 초기화"""
+        """평가 기준값 초기화 (매우 나쁨 등급 추가, 배당성향 개선)"""
         self.thresholds = {
             # 성장성 지표 (높을수록 좋음)
             'revenue_growth': {
-                '매우_좋음': 20.0, '좋음': 10.0, '보통': 0.0, '나쁨': -10.0
+                '매우_좋음': 20.0, '좋음': 10.0, '보통': 0.0, '나쁨': -10.0, '매우_나쁨': -15.0
             },
             'operating_profit_growth': {
-                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0
+                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0, '매우_나쁨': -25.0
             },
             'net_profit_growth': {
-                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0
+                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0, '매우_나쁨': -25.0
             },
             
             # 수익성 지표 (높을수록 좋음)
             'operating_margin': {
-                '매우_좋음': 15.0, '좋음': 10.0, '보통': 5.0, '나쁨': 2.0
+                '매우_좋음': 15.0, '좋음': 10.0, '보통': 5.0, '나쁨': 2.0, '매우_나쁨': 0.0
             },
             'net_margin': {
-                '매우_좋음': 10.0, '좋음': 7.0, '보통': 4.0, '나쁨': 1.0
+                '매우_좋음': 10.0, '좋음': 7.0, '보통': 4.0, '나쁨': 1.0, '매우_나쁨': 0.0
             },
             'roe': {
-                '매우_좋음': 20.0, '좋음': 15.0, '보통': 10.0, '나쁨': 5.0
+                '매우_좋음': 20.0, '좋음': 15.0, '보통': 10.0, '나쁨': 5.0, '매우_나쁨': 0.0
             },
             
             # 안정성 지표 (낮을수록 좋음)
             'debt_ratio': {
-                '매우_좋음': 50.0, '좋음': 100.0, '보통': 150.0, '나쁨': 200.0
+                '매우_좋음': 50.0, '좋음': 100.0, '보통': 150.0, '나쁨': 200.0, '매우_나쁨': 400.0
             },
             'quick_ratio': {
-                '매우_좋음': 150.0, '좋음': 100.0, '보통': 70.0, '나쁨': 50.0
+                '매우_좋음': 150.0, '좋음': 100.0, '보통': 70.0, '나쁨': 50.0, '매우_나쁨': 0.0
             },
             'reserve_ratio': {
-                '매우_좋음': 500.0, '좋음': 300.0, '보통': 200.0, '나쁨': 100.0
+                '매우_좋음': 500.0, '좋음': 300.0, '보통': 200.0, '나쁨': 100.0, '매우_나쁨': 0.0
             },
             
             # 시장가치 지표 (PER, PBR은 낮을수록 좋음, 배당지표는 높을수록 좋음)
             'per': {
-                '매우_좋음': 5.0, '좋음': 10.0, '보통': 15.0, '나쁨': 20.0
+                '매우_좋음': 5.0, '좋음': 10.0, '보통': 15.0, '나쁨': 20.0, '매우_나쁨': 30.0
             },
             'pbr': {
-                '매우_좋음': 0.5, '좋음': 1.0, '보통': 1.5, '나쁨': 2.0
+                '매우_좋음': 0.5, '좋음': 1.0, '보통': 1.5, '나쁨': 2.0, '매우_나쁨': 3.0
             },
             'dividend_yield': {
-                '매우_좋음': 5.0, '좋음': 3.0, '보통': 2.0, '나쁨': 1.0
+                '매우_좋음': 5.0, '좋음': 3.0, '보통': 2.0, '나쁨': 1.0, '매우_나쁨': 0.0
             },
+            # 배당성향: 적정범위 중심으로 개선
             'dividend_payout': {
-                '매우_좋음': 50.0, '좋음': 30.0, '보통': 20.0, '나쁨': 10.0
+                '매우_좋음': 40.0, '좋음': 30.0, '보통': 10.0, '나쁨': 0.0, '매우_나쁨': 100.0
             }
         }
         
@@ -281,13 +282,37 @@ class FinancialStatementAnalyzer:
                 evaluation_grade = '나쁨'
                 
             # 평가 결과 저장
+            growth_grade = self._get_grade(growth_score)
+            profitability_grade = self._get_grade(profitability_score)
+            stability_grade = self._get_grade(stability_score)
+            market_value_grade = self._get_grade(market_value_score)
+            total_grade = self._get_grade(final_score)
             evaluation_details = {
                 'growth': growth_result,
+                'growth_grade': growth_grade,
                 'profitability': profitability_result,
+                'profitability_grade': profitability_grade,
                 'stability': stability_result,
-                'market_value': market_value_result
+                'stability_grade': stability_grade,
+                'market_value': market_value_result,
+                'market_value_grade': market_value_grade,
+                'total_grade': total_grade
             }
-            
+            # 각 영역별 모든 세부 의견을 리스트로 추출
+            def get_all_descriptions(result):
+                return [ev['description'] for ev in result.get('evaluations', [])]
+            summary_details = {
+                '성장성': get_all_descriptions(growth_result),
+                '수익성': get_all_descriptions(profitability_result),
+                '안정성': get_all_descriptions(stability_result),
+                '시장가치': get_all_descriptions(market_value_result)
+            }
+            summary = {
+                '종합': self.final_templates[evaluation_grade].format(
+                    company_name=self._get_company_name(ticker)
+                ),
+                **summary_details
+            }
             self._save_evaluation_result(
                 ticker=ticker,
                 eval_date=eval_date,
@@ -297,23 +322,27 @@ class FinancialStatementAnalyzer:
                 market_value_score=market_value_score,
                 total_score=final_score,
                 investment_opinion=investment_opinion,
-                evaluation_details=evaluation_details
+                evaluation_details=evaluation_details,
+                summary_report=summary['종합']
             )
             
             return {
                 'success': True,
                 'ticker': ticker,
-                'eval_date': eval_date,
+                'eval_date': eval_date or datetime.today().date(),
                 'growth_score': growth_score,
+                'growth_grade': growth_grade,
                 'profitability_score': profitability_score,
+                'profitability_grade': profitability_grade,
                 'stability_score': stability_score,
+                'stability_grade': stability_grade,
                 'market_value_score': market_value_score,
+                'market_value_grade': market_value_grade,
                 'total_score': final_score,
+                'total_grade': total_grade,
                 'investment_opinion': investment_opinion,
                 'evaluation_details': evaluation_details,
-                'summary': self.final_templates[evaluation_grade].format(
-                    company_name=self._get_company_name(ticker)
-                )
+                'summary': summary
             }
             
         except Exception as e:
@@ -327,7 +356,7 @@ class FinancialStatementAnalyzer:
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
             cursor.execute("""
-                SELECT year, period, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout
+                SELECT year, period, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout, industry_per
                 FROM financial_info
                 WHERE ticker = ? AND period = 'Y'
                 ORDER BY year ASC
@@ -335,8 +364,7 @@ class FinancialStatementAnalyzer:
             rows = cursor.fetchall()
             if not rows:
                 return {}
-            # 각 지표별로 [{'year': y, 'period': p, 'value': v}, ...] 형태로 구조화
-            columns = ['year', 'period', 'revenue', 'operating_profit', 'net_profit', 'operating_margin', 'net_margin', 'roe', 'debt_ratio', 'quick_ratio', 'reserve_ratio', 'eps', 'per', 'bps', 'pbr', 'cash_dividend', 'dividend_yield', 'dividend_payout']
+            columns = ['year', 'period', 'revenue', 'operating_profit', 'net_profit', 'operating_margin', 'net_margin', 'roe', 'debt_ratio', 'quick_ratio', 'reserve_ratio', 'eps', 'per', 'bps', 'pbr', 'cash_dividend', 'dividend_yield', 'dividend_payout', 'industry_per']
             data = {col: [] for col in columns[2:]}
             for row in rows:
                 y, p = row[0], row[1]
@@ -357,20 +385,22 @@ class FinancialStatementAnalyzer:
             result = cursor.fetchone()
             return result[0] if result else ticker
             
-    def _calculate_growth_rate(self, values: List[float]) -> Optional[float]:
-        """성장률을 계산합니다."""
+    def _calculate_growth_rate(self, values: List[float], years: int) -> Optional[float]:
+        """CAGR(연평균 성장률) 계산."""
         if len(values) < 2 or not all(isinstance(x, (int, float)) for x in values[:2]):
             return None
-            
+        start, end = values[0], values[-1]
+        if start <= 0 or years <= 0:
+            return None
         try:
-            return ((values[0] / values[1]) - 1) * 100
-        except (ZeroDivisionError, TypeError):
+            return (pow(end / start, 1 / years) - 1) * 100
+        except Exception:
             return None
             
     def _calculate_score(self, value: float, thresholds: Dict[str, float]) -> float:
-        """주어진 값에 대한 점수를 계산합니다."""
-        # PER, PBR은 낮을수록 좋음
-        if thresholds.get('매우_좋음', 0) > thresholds.get('나쁨', 0):  # 높을수록 좋은 지표
+        """주어진 값에 대한 점수를 계산합니다. (매우 나쁨 등급 반영)"""
+        # 높을수록 좋은 지표
+        if thresholds.get('매우_좋음', 0) > thresholds.get('나쁨', 0):
             if value >= thresholds['매우_좋음']:
                 return 5.0
             elif value >= thresholds['좋음']:
@@ -379,9 +409,12 @@ class FinancialStatementAnalyzer:
                 return 3.0
             elif value >= thresholds['나쁨']:
                 return 2.0
+            elif value >= thresholds.get('매우_나쁨', float('-inf')):
+                return 1.0
             else:
                 return 1.0
-        else:  # 낮을수록 좋은 지표 (PER, PBR, 부채비율 등)
+        # 낮을수록 좋은 지표
+        else:
             if value <= thresholds['매우_좋음']:
                 return 5.0
             elif value <= thresholds['좋음']:
@@ -390,68 +423,72 @@ class FinancialStatementAnalyzer:
                 return 3.0
             elif value <= thresholds['나쁨']:
                 return 2.0
+            elif value <= thresholds.get('매우_나쁨', float('inf')):
+                return 1.0
             else:
                 return 1.0
             
     def _evaluate_growth(self, data: Dict) -> Dict:
-        """성장성 지표를 평가합니다."""
+        """성장성 지표를 평가합니다. (CAGR 공식 적용)"""
         results = {
             'evaluations': [],
             'score': 0.0
         }
-        # 매출액 성장률
+        # 매출액 성장률 (CAGR)
         if 'revenue' in data and len(data['revenue']) >= 2:
-            # 연도별 value 추출 및 정렬
             values = sorted(data['revenue'], key=lambda x: int(x['year']))
             start, end = values[0], values[-1]
-            if start['value'] and end['value'] and start['value'] != 0:
-                growth_rate = ((end['value'] / start['value']) - 1) * 100
-                print(f"[성장성-매출액] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
-                score = self._calculate_score(growth_rate, self.thresholds['revenue_growth'])
+            years = int(end['year']) - int(start['year'])
+            if start['value'] and end['value'] and years > 0:
+                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                print(f"[성장성-매출액] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
+                score = self._calculate_score(cagr, self.thresholds['revenue_growth'])
                 results['evaluations'].append({
                     'metric': 'revenue_growth',
-                    'value': growth_rate,
+                    'value': cagr,
                     'score': score,
                     'description': self.templates['revenue_growth'].get(
                         self._get_grade(score),
                         self.templates['revenue_growth']['보통']
-                    ).format(value=growth_rate)
+                    ).format(value=cagr)
                 })
                 results['score'] += score * self.weights['growth']['revenue_growth']
-        # 영업이익 성장률
+        # 영업이익 성장률 (CAGR)
         if 'operating_profit' in data and len(data['operating_profit']) >= 2:
             values = sorted(data['operating_profit'], key=lambda x: int(x['year']))
             start, end = values[0], values[-1]
-            if start['value'] and end['value'] and start['value'] != 0:
-                growth_rate = ((end['value'] / start['value']) - 1) * 100
-                print(f"[성장성-영업이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
-                score = self._calculate_score(growth_rate, self.thresholds['operating_profit_growth'])
+            years = int(end['year']) - int(start['year'])
+            if start['value'] and end['value'] and years > 0:
+                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                print(f"[성장성-영업이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
+                score = self._calculate_score(cagr, self.thresholds['operating_profit_growth'])
                 results['evaluations'].append({
                     'metric': 'operating_profit_growth',
-                    'value': growth_rate,
+                    'value': cagr,
                     'score': score,
                     'description': self.templates['operating_profit_growth'].get(
                         self._get_grade(score),
                         self.templates['operating_profit_growth']['보통']
-                    ).format(value=growth_rate)
+                    ).format(value=cagr)
                 })
                 results['score'] += score * self.weights['growth']['operating_profit_growth']
-        # 순이익 성장률
+        # 순이익 성장률 (CAGR)
         if 'net_profit' in data and len(data['net_profit']) >= 2:
             values = sorted(data['net_profit'], key=lambda x: int(x['year']))
             start, end = values[0], values[-1]
-            if start['value'] and end['value'] and start['value'] != 0:
-                growth_rate = ((end['value'] / start['value']) - 1) * 100
-                print(f"[성장성-순이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
-                score = self._calculate_score(growth_rate, self.thresholds['net_profit_growth'])
+            years = int(end['year']) - int(start['year'])
+            if start['value'] and end['value'] and years > 0:
+                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                print(f"[성장성-순이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
+                score = self._calculate_score(cagr, self.thresholds['net_profit_growth'])
                 results['evaluations'].append({
                     'metric': 'net_profit_growth',
-                    'value': growth_rate,
+                    'value': cagr,
                     'score': score,
                     'description': self.templates['net_profit_growth'].get(
                         self._get_grade(score),
                         self.templates['net_profit_growth']['보통']
-                    ).format(value=growth_rate)
+                    ).format(value=cagr)
                 })
                 results['score'] += score * self.weights['growth']['net_profit_growth']
         # 평균 점수 계산
@@ -582,29 +619,37 @@ class FinancialStatementAnalyzer:
         return results
         
     def _evaluate_market_value(self, data: Dict) -> Dict:
-        """시장가치 지표를 평가합니다."""
+        """시장가치 지표를 평가합니다. (동일업종 PER과의 상대평가 포함)"""
         results = {
             'evaluations': [],
             'score': 0.0
         }
         # PER
-        if 'per' in data and data['per']:
-            per = self._get_latest_valid(data['per'])
-            if per and per['value'] > 0:
-                print(f"[시장가치-PER] {per['year']}년: {per['value']}")
-                score = self._calculate_score(per['value'], self.thresholds['per'])
-                results['evaluations'].append({
-                    'metric': 'per',
-                    'value': per['value'],
-                    'score': score,
-                    'description': self.templates['per'].get(
-                        self._get_grade(score),
-                        self.templates['per']['보통']
-                    ).format(value=per['value']) + f" (평가연도: {per['year']})"
-                })
-                results['score'] += score * self.weights['market_value']['per']
-            else:
-                print("[시장가치-PER] 데이터 부족")
+        per = self._get_latest_valid(data.get('per', []))
+        industry_per = self._get_latest_valid(data.get('industry_per', []))
+        if per and per['value'] > 0:
+            rel_desc = ''
+            if industry_per and industry_per['value']:
+                diff = per['value'] - industry_per['value']
+                if abs(diff) < 0.5:
+                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배와 유사)"
+                elif diff < 0:
+                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배 대비 저평가)"
+                else:
+                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배 대비 고평가)"
+            score = self._calculate_score(per['value'], self.thresholds['per'])
+            results['evaluations'].append({
+                'metric': 'per',
+                'value': per['value'],
+                'score': score,
+                'description': self.templates['per'].get(
+                    self._get_grade(score),
+                    self.templates['per']['보통']
+                ).format(value=per['value']) + rel_desc + f" (평가연도: {per['year']})"
+            })
+            results['score'] += score * self.weights['market_value']['per']
+        else:
+            print("[시장가치-PER] 데이터 부족")
         # PBR
         if 'pbr' in data and data['pbr']:
             pbr = self._get_latest_valid(data['pbr'])
@@ -669,7 +714,7 @@ class FinancialStatementAnalyzer:
     def _get_grade(self, score: float) -> str:
         """점수에 따른 등급을 반환합니다."""
         if score >= 4.5:
-            return '매우_좋음'
+            return '매우 좋음'
         elif score >= 3.5:
             return '좋음'
         elif score >= 2.5:
@@ -677,7 +722,7 @@ class FinancialStatementAnalyzer:
         elif score >= 1.5:
             return '나쁨'
         else:
-            return '매우_나쁨'
+            return '매우 나쁨'
         
     def _save_evaluation_result(self, **kwargs):
         """평가 결과를 DB에 저장합니다."""
@@ -688,8 +733,8 @@ class FinancialStatementAnalyzer:
                 INSERT INTO financial_evaluation (
                     ticker, eval_date, growth_score, profitability_score,
                     stability_score, market_value_score, total_score,
-                    investment_opinion, evaluation_details
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    investment_opinion, evaluation_details, summary_report
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 ON CONFLICT(ticker, eval_date) DO UPDATE SET
                     growth_score = excluded.growth_score,
                     profitability_score = excluded.profitability_score,
@@ -698,6 +743,7 @@ class FinancialStatementAnalyzer:
                     total_score = excluded.total_score,
                     investment_opinion = excluded.investment_opinion,
                     evaluation_details = excluded.evaluation_details,
+                    summary_report = excluded.summary_report,
                     updated_at = CURRENT_TIMESTAMP
             """, (
                 kwargs['ticker'],
@@ -708,5 +754,25 @@ class FinancialStatementAnalyzer:
                 kwargs['market_value_score'],
                 kwargs['total_score'],
                 kwargs['investment_opinion'],
-                json.dumps(kwargs['evaluation_details'], ensure_ascii=False)
+                json.dumps(kwargs['evaluation_details'], ensure_ascii=False),
+                kwargs['summary_report']
             )) 
+
+    # EPS/BPS 성장률 등급화 예시 (데이터 있을 때만)
+    def _evaluate_eps_growth(self, data: Dict) -> Dict:
+        results = {'evaluations': [], 'score': 0.0}
+        if 'eps' in data and len(data['eps']) >= 2:
+            values = sorted(data['eps'], key=lambda x: int(x['year']))
+            start, end = values[0], values[-1]
+            years = int(end['year']) - int(start['year'])
+            if start['value'] and end['value'] and years > 0:
+                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                score = self._calculate_score(cagr, self.thresholds['revenue_growth'])
+                results['evaluations'].append({
+                    'metric': 'eps_growth',
+                    'value': cagr,
+                    'score': score,
+                    'description': f"EPS 연평균 성장률: {cagr:.2f}%"
+                })
+                results['score'] = score
+        return results 

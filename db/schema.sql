@@ -177,6 +177,7 @@ CREATE TABLE IF NOT EXISTS financial_info (
     cash_dividend INTEGER,   -- 주당배당금(원)
     dividend_yield FLOAT,    -- 시가배당률(%)
     dividend_payout FLOAT,   -- 배당성향(%)
+    industry_per FLOAT,      -- 동일업종 PER(배)
     updated_at DATE,
     PRIMARY KEY (ticker, year, period),
     FOREIGN KEY (ticker) REFERENCES Stocks(stock_code)
@@ -205,6 +206,7 @@ CREATE TABLE IF NOT EXISTS financial_evaluation (
     
     -- 상세 평가 내용 (JSON)
     evaluation_details TEXT,
+    summary_report TEXT,
     
     -- 메타 정보
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,

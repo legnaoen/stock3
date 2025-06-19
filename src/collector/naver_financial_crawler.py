@@ -116,62 +116,63 @@ class NaverFinancialCrawler:
         try:
             url = f"{self.base_url}?code={ticker}"
             tables = pd.read_html(url, encoding='euc-kr')
-            
+            # BeautifulSoup으로 동일업종 PER 추출
+            response = requests.get(url)
+            response.encoding = 'euc-kr'
+            soup = BeautifulSoup(response.text, 'html.parser')
+            industry_per = None
+            try:
+                # 동일업종 PER 추출
+                per_th = soup.find('th', string=lambda x: x and '동일업종 PER' in x)
+                if per_th:
+                    logger.info(f"Found PER header: {per_th.text.strip()}")
+                    per_td = per_th.find_next_sibling('td')
+                    if per_td:
+                        per_value = per_td.find('em')
+                        if per_value:
+                            logger.info(f"Found PER value: {per_value.text.strip()}")
+                            industry_per = float(str(per_value.text).replace(',', '').replace('배', '').strip())
+                            logger.info(f"Parsed industry PER: {industry_per}")
+            except Exception as e:
+                logger.warning(f"동일업종 PER 파싱 실패: {e}")
             # 연간 재무정보 테이블 찾기
             financial_df = None
             for table in tables:
                 if '주요재무정보' in str(table):
                     financial_df = table
                     break
-                    
             if financial_df is None:
                 logger.warning(f"No financial info found for {ticker}")
                 return []
-
             logger.info(f"\nFinancial table:\n{financial_df.to_string()}")
-            
-            # 결과를 저장할 리스트
             results = []
-            
-            # 컬럼 정보 분석
             annual_columns = []
             quarterly_columns = []
-            
-            # 연간/분기 데이터 구분
             for col in financial_df.columns:
                 if not isinstance(col, tuple) or len(col) < 2:
                     continue
-                    
-                section_type = col[0]  # '최근 연간 실적' or '최근 분기 실적'
-                period_info = col[1]  # '2024.12' or '2025.12(E)'
-                
+                section_type = col[0]
+                period_info = col[1]
                 if not period_info or period_info == '주요재무정보':
                     continue
-                    
                 match = re.match(r'(\d{4})\.(\d{2})(?:\(E\))?', period_info)
                 if not match:
                     continue
-                    
                 if '연간' in section_type:
                     annual_columns.append(col)
                 elif '분기' in section_type:
                     quarterly_columns.append(col)
-            
             if not annual_columns:
                 logger.warning("Could not find annual data section")
                 return []
-                
-            # 데이터 추출 함수
             def extract_data(col, is_quarterly: bool):
-                period_info = col[1]  # '2024.12' or '2025.12(E)'
+                period_info = col[1]
                 match = re.match(r'(\d{4})\.(\d{2})(?:\(E\))?', period_info)
                 if not match:
                     return None
-                    
                 year = match.group(1)
                 month = match.group(2)
                 is_estimate = '(E)' in period_info
-                # 분기 데이터는 Q1~Q4로 저장, 연간은 Y
                 if is_quarterly:
                     if month == '03':
                         period = 'Q1'
@@ -182,7 +183,7 @@ class NaverFinancialCrawler:
                     elif month == '12':
                         period = 'Q4'
                     else:
-                        period = 'Q'  # 예외 처리: 알 수 없는 월
+                        period = 'Q'
                 else:
                     period = 'Y'
                 data = {
@@ -190,10 +191,9 @@ class NaverFinancialCrawler:
                     'year': year,
                     'period': period,
                     'is_estimate': is_estimate,
-                    'updated_at': datetime.now().strftime('%Y-%m-%d')
+                    'updated_at': datetime.now().strftime('%Y-%m-%d'),
+                    'industry_per': industry_per
                 }
-                
-                # 각 지표 추출
                 metrics = {
                     '매출액': ('revenue', self._parse_number),
                     '영업이익': ('operating_profit', self._parse_number),
@@ -212,7 +212,6 @@ class NaverFinancialCrawler:
                     '시가배당률(%)': ('dividend_yield', self._parse_number),
                     '배당성향(%)': ('dividend_payout', self._parse_number)
                 }
-                
                 for row_name, (col_name, parser) in metrics.items():
                     try:
                         value = financial_df.loc[financial_df.iloc[:, 0] == row_name, col].iloc[0]
@@ -222,23 +221,16 @@ class NaverFinancialCrawler:
                             logger.info(f"Found {col_name} ({period}): {parsed_value}")
                     except (IndexError, KeyError):
                         data[col_name] = None
-                
                 return data
-            
-            # 연간 데이터 추출
             for col in annual_columns:
                 data = extract_data(col, False)
                 if data:
                     results.append(data)
-                    
-            # 분기 데이터 추출
             for col in quarterly_columns:
                 data = extract_data(col, True)
                 if data:
                     results.append(data)
-                
             return results
-            
         except Exception as e:
             logger.error(f"Error getting financial info for {ticker}: {str(e)}")
             return []
