@@ -221,7 +221,6 @@ def get_industry_performance():
         FROM today t
         LEFT JOIN yesterday y ON t.industry_id = y.industry_id
         ORDER BY t.rank ASC
-        LIMIT 30
         """
         
         cursor.execute(query, (date, date, date, date, yesterday))
@@ -325,7 +324,6 @@ def get_theme_performance():
         FROM today t
         LEFT JOIN yesterday y ON t.theme_id = y.theme_id
         ORDER BY t.rank ASC
-        LIMIT 30
         """
         
         cursor.execute(query, (date, date, date, date, yesterday))
@@ -692,16 +690,12 @@ def stock_detail():
                 for area in ['growth', 'profitability', 'stability', 'market_value']:
                     if area in details:
                         evals = details[area].get('evaluations', [])
-                        if evals:
-                            min_eval = min(evals, key=lambda x: x.get('score', 5))
-                            eval_details[area] = {
-                                'description': min_eval.get('description', '-'),
-                                'grade': details.get(f"{area}_grade", '-')
-                            }
-                        else:
-                            eval_details[area] = {'description': '-', 'grade': details.get(f"{area}_grade", '-')}
+                        eval_details[area] = {
+                            'descriptions': [e.get('description', '-') for e in evals],
+                            'grade': details.get(f"{area}_grade", '-')
+                        }
                     else:
-                        eval_details[area] = {'description': '-', 'grade': details.get(f"{area}_grade", '-')}
+                        eval_details[area] = {'descriptions': [], 'grade': details.get(f"{area}_grade", '-')}
                 eval_details['total_grade'] = details.get('total_grade', '-')
             except Exception:
                 eval_details = None
