@@ -38,25 +38,25 @@ class FinancialStatementAnalyzer:
                 'reserve_ratio': 0.3
             },
             'market_value': {
-                'per': 0.3,
+                'per': 0.5,
                 'pbr': 0.3,
-                'dividend_yield': 0.2,
-                'dividend_payout': 0.2
+                'dividend_yield': 0.1,
+                'dividend_payout': 0.1
             }
         }
         
     def _init_thresholds(self):
         """평가 기준값 초기화 (매우 나쁨 등급 추가, 배당성향 개선)"""
         self.thresholds = {
-            # 성장성 지표 (높을수록 좋음)
+            # 성장성 지표 (높을수록 좋음, 5단계 세분화)
             'revenue_growth': {
-                '매우_좋음': 20.0, '좋음': 10.0, '보통': 0.0, '나쁨': -10.0, '매우_나쁨': -15.0
+                '매우_좋음': 20.0, '좋음': 15.0, '보통': 8.0, '나쁨': 4.0, '매우_나쁨': 0.0
             },
             'operating_profit_growth': {
-                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0, '매우_나쁨': -25.0
+                '매우_좋음': 25.0, '좋음': 15.0, '보통': 8.0, '나쁨': 4.0, '매우_나쁨': 0.0
             },
             'net_profit_growth': {
-                '매우_좋음': 25.0, '좋음': 15.0, '보통': 0.0, '나쁨': -15.0, '매우_나쁨': -25.0
+                '매우_좋음': 25.0, '좋음': 15.0, '보통': 8.0, '나쁨': 4.0, '매우_나쁨': 0.0
             },
             
             # 수익성 지표 (높을수록 좋음)
@@ -267,19 +267,22 @@ class FinancialStatementAnalyzer:
             else:
                 final_score = 0
             
-            # 투자 의견 결정
-            if final_score >= 4.0:
-                investment_opinion = '매수'
+            # 투자 의견 결정 (5단계)
+            if final_score >= 4.5:
+                investment_opinion = '강력 매수'
                 evaluation_grade = '매우_좋음'
-            elif final_score >= 3.0:
-                investment_opinion = '보유'
+            elif final_score >= 3.5:
+                investment_opinion = '매수/보유'
                 evaluation_grade = '좋음'
-            elif final_score >= 2.0:
-                investment_opinion = '관망'
+            elif final_score >= 2.5:
+                investment_opinion = '관망/보유'
                 evaluation_grade = '보통'
+            elif final_score >= 1.5:
+                investment_opinion = '매도 유의'
+                evaluation_grade = '나쁨'
             else:
                 investment_opinion = '매도'
-                evaluation_grade = '나쁨'
+                evaluation_grade = '매우_나쁨'
                 
             # 평가 결과 저장
             growth_grade = self._get_grade(growth_score)
@@ -443,12 +446,14 @@ class FinancialStatementAnalyzer:
                 cagr = self._calculate_growth_rate([start['value'], end['value']], years)
                 print(f"[성장성-매출액] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
                 score = self._calculate_score(cagr, self.thresholds['revenue_growth'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'revenue_growth',
                     'value': cagr,
                     'score': score,
                     'description': self.templates['revenue_growth'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['revenue_growth']['보통']
                     ).format(value=cagr)
                 })
@@ -462,12 +467,14 @@ class FinancialStatementAnalyzer:
                 cagr = self._calculate_growth_rate([start['value'], end['value']], years)
                 print(f"[성장성-영업이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
                 score = self._calculate_score(cagr, self.thresholds['operating_profit_growth'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'operating_profit_growth',
                     'value': cagr,
                     'score': score,
                     'description': self.templates['operating_profit_growth'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['operating_profit_growth']['보통']
                     ).format(value=cagr)
                 })
@@ -481,12 +488,14 @@ class FinancialStatementAnalyzer:
                 cagr = self._calculate_growth_rate([start['value'], end['value']], years)
                 print(f"[성장성-순이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
                 score = self._calculate_score(cagr, self.thresholds['net_profit_growth'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'net_profit_growth',
                     'value': cagr,
                     'score': score,
                     'description': self.templates['net_profit_growth'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['net_profit_growth']['보통']
                     ).format(value=cagr)
                 })
@@ -508,12 +517,14 @@ class FinancialStatementAnalyzer:
                 operating_margin = (op['value'] / rev['value']) * 100
                 print(f"[수익성-영업이익률] {op['year']}년: {op['value']}, {rev['year']}년: {rev['value']} → {operating_margin:.2f}%")
                 score = self._calculate_score(operating_margin, self.thresholds['operating_margin'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'operating_margin',
                     'value': operating_margin,
                     'score': score,
                     'description': self.templates['operating_margin'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['operating_margin']['보통']
                     ).format(value=operating_margin)
                 })
@@ -526,12 +537,14 @@ class FinancialStatementAnalyzer:
                 net_margin = (np['value'] / rev['value']) * 100
                 print(f"[수익성-순이익률] {np['year']}년: {np['value']}, {rev['year']}년: {rev['value']} → {net_margin:.2f}%")
                 score = self._calculate_score(net_margin, self.thresholds['net_margin'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'net_margin',
                     'value': net_margin,
                     'score': score,
                     'description': self.templates['net_margin'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['net_margin']['보통']
                     ).format(value=net_margin)
                 })
@@ -557,12 +570,14 @@ class FinancialStatementAnalyzer:
             if dr:
                 print(f"[안정성-부채비율] {dr['year']}년: {dr['value']}")
                 score = self._calculate_score(dr['value'], self.thresholds['debt_ratio'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'debt_ratio',
                     'value': dr['value'],
                     'score': score,
                     'description': self.templates['debt_ratio'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['debt_ratio']['보통']
                     ).format(value=dr['value']) + f" (평가연도: {dr['year']})"
                 })
@@ -575,12 +590,14 @@ class FinancialStatementAnalyzer:
             if qr:
                 print(f"[안정성-당좌비율] {qr['year']}년: {qr['value']}")
                 score = self._calculate_score(qr['value'], self.thresholds['quick_ratio'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'quick_ratio',
                     'value': qr['value'],
                     'score': score,
                     'description': self.templates['quick_ratio'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['quick_ratio']['보통']
                     ).format(value=qr['value']) + f" (평가연도: {qr['year']})"
                 })
@@ -593,12 +610,14 @@ class FinancialStatementAnalyzer:
             if rr:
                 print(f"[안정성-유보율] {rr['year']}년: {rr['value']}")
                 score = self._calculate_score(rr['value'], self.thresholds['reserve_ratio'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'reserve_ratio',
                     'value': rr['value'],
                     'score': score,
                     'description': self.templates['reserve_ratio'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['reserve_ratio']['보통']
                     ).format(value=rr['value']) + f" (평가연도: {rr['year']})"
                 })
@@ -627,12 +646,14 @@ class FinancialStatementAnalyzer:
                 else:
                     rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배 대비 고평가)"
             score = self._calculate_score(per['value'], self.thresholds['per'])
+            grade = self._get_grade(score)
+            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
             results['evaluations'].append({
                 'metric': 'per',
                 'value': per['value'],
                 'score': score,
                 'description': self.templates['per'].get(
-                    self._get_grade(score),
+                    template_key,
                     self.templates['per']['보통']
                 ).format(value=per['value']) + rel_desc + f" (평가연도: {per['year']})"
             })
@@ -645,12 +666,14 @@ class FinancialStatementAnalyzer:
             if pbr and pbr['value'] > 0:
                 print(f"[시장가치-PBR] {pbr['year']}년: {pbr['value']}")
                 score = self._calculate_score(pbr['value'], self.thresholds['pbr'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'pbr',
                     'value': pbr['value'],
                     'score': score,
                     'description': self.templates['pbr'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['pbr']['보통']
                     ).format(value=pbr['value']) + f" (평가연도: {pbr['year']})"
                 })
@@ -663,12 +686,14 @@ class FinancialStatementAnalyzer:
             if dy:
                 print(f"[시장가치-배당수익률] {dy['year']}년: {dy['value']}")
                 score = self._calculate_score(dy['value'], self.thresholds['dividend_yield'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'dividend_yield',
                     'value': dy['value'],
                     'score': score,
                     'description': self.templates['dividend_yield'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['dividend_yield']['보통']
                     ).format(value=dy['value']) + f" (평가연도: {dy['year']})"
                 })
@@ -683,12 +708,14 @@ class FinancialStatementAnalyzer:
                 dividend_payout = (cd['value'] / eps['value']) * 100
                 print(f"[시장가치-배당성향] {cd['year']}년: {cd['value']}, {eps['year']}년: {eps['value']} → {dividend_payout:.2f}%")
                 score = self._calculate_score(dividend_payout, self.thresholds['dividend_payout'])
+                grade = self._get_grade(score)
+                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
                 results['evaluations'].append({
                     'metric': 'dividend_payout',
                     'value': dividend_payout,
                     'score': score,
                     'description': self.templates['dividend_payout'].get(
-                        self._get_grade(score),
+                        template_key,
                         self.templates['dividend_payout']['보통']
                     ).format(value=dividend_payout) + f" (평가연도: {cd['year']}, {eps['year']})"
                 })
@@ -762,3 +789,11 @@ class FinancialStatementAnalyzer:
                 })
                 results['score'] = score
         return results 
+
+    GRADE_TO_TEMPLATE_KEY = {
+        '매우 좋음': '매우_좋음',
+        '좋음': '좋음',
+        '보통': '보통',
+        '나쁨': '나쁨',
+        '매우 나쁨': '매우_나쁨'
+    } 
