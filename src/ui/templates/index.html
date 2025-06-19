@@ -99,6 +99,7 @@
                             <ul class="dropdown-menu dropdown-menu-end">
                                 <li><a class="dropdown-item" id="themeRefreshBtn" href="#">테마정보 업데이트</a></li>
                                 <li><a class="dropdown-item" id="industryRefreshBtn" href="#">업종정보 업데이트</a></li>
+                                <li><a class="dropdown-item" id="surgeNewsUpdateBtn" href="#">급등주 뉴스 업데이트</a></li>
                             </ul>
                         </div>
                     </div>
@@ -402,6 +403,7 @@
             // 새로고침 버튼 이벤트 핸들러
             const themeRefreshBtn = document.getElementById('themeRefreshBtn');
             const industryRefreshBtn = document.getElementById('industryRefreshBtn');
+            const surgeNewsBtn = document.getElementById('surgeNewsUpdateBtn');
             if (themeRefreshBtn) themeRefreshBtn.addEventListener('click', function(e) { 
                 e.preventDefault(); 
                 refreshTheme(); 
@@ -409,6 +411,10 @@
             if (industryRefreshBtn) industryRefreshBtn.addEventListener('click', function(e) { 
                 e.preventDefault(); 
                 refreshIndustry(); 
+            });
+            if (surgeNewsBtn) surgeNewsBtn.addEventListener('click', function(e) {
+                e.preventDefault();
+                updateSurgeNews();
             });
         });
 
@@ -670,6 +676,24 @@
                     break;
             }
         });
+
+        async function updateSurgeNews() {
+            setLoading(true, 'full');
+            try {
+                const res = await fetch('/api/performance/surge');
+                const data = await res.json();
+                const codes = data.data.map(item => item.code);
+                const btn = document.getElementById('fullRefreshBtn');
+                for (let i = 0; i < codes.length; i++) {
+                    btn.innerHTML = `<span class="spinner-border spinner-border-sm me-1"></span>진행중... (${i+1}/${codes.length})`;
+                    await fetch(`/api/stock/${codes[i]}/crawl_news`, { method: 'POST' });
+                }
+                setTimeout(() => { location.reload(); }, 1500);
+            } catch (e) {
+                alert('급등주 뉴스 업데이트 실패');
+                setLoading(false, 'full');
+            }
+        }
     </script>
 </body>
 </html> 
