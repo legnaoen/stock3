@@ -15,8 +15,8 @@
         .market-closed { background-color: #f8d7da; }
         .market-waiting { background-color: #fff3cd; }
         
-        .change-rate-up { color: #dc3545; }
-        .change-rate-down { color: #0d6efd; }
+        .change-rate-up { color: #d24f45; }
+        .change-rate-down { color: #2d95d0; }
         
         .refresh-button {
             margin-left: 0px;
@@ -77,6 +77,59 @@
             color: #6c757d;
             font-size: 0.85em;
             margin-left: 4px;
+        }
+
+        /* 테마 필터 스타일 */
+        .theme-chip {
+            display: inline-block;
+            padding: 0px 4px;
+            margin: 0px;
+            background-color: #f0f0f0;
+            border-radius: 4px;
+            font-size: 0.85rem;
+            cursor: pointer;
+            transition: all 0.2s ease;
+            border: 1px solid #ddd;
+        }
+
+        .theme-chip:hover {
+            background-color: #e0e0e0;
+        }
+
+        .theme-chip.active {
+            background-color: #007bff;
+            color: white;
+            border-color: #0056b3;
+        }
+
+        .theme-cell {
+            max-width: 300px;
+        }
+
+        .theme-container {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 4px;
+        }
+
+        .filter-container {
+            padding: 8px;
+            background-color: #f8f9fa;
+            border-radius: 8px;
+            margin-bottom: 20px;
+        }
+
+        .clear-filters {
+            color: #6c757d;
+            text-decoration: none;
+            font-size: 0.8rem;
+            margin-left: 4px;
+            cursor: pointer;
+            white-space: nowrap;
+        }
+
+        .clear-filters:hover {
+            color: #495057;
         }
     </style>
 </head>
@@ -183,36 +236,56 @@
             </div>
 
             <!-- 급등주 탭 -->
-            <div class="tab-pane fade" id="surge">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>종목명</th>
-                            <th>등락률</th>
-                            <th>업종</th>
-                            <th>테마</th>
-                            <th>뉴스</th>
-                        </tr>
-                    </thead>
-                    <tbody id="surgeData"></tbody>
-                </table>
+            <div class="tab-pane fade" id="surge" role="tabpanel">
+                
+                <!-- 테마 필터 추가 -->
+                <div class="filter-container">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="theme-container flex-grow-1" id="surgeThemeFilters"></div>
+                        <a class="clear-filters" onclick="clearThemeFilter('surge')">필터 초기화</a>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>종목명</th>
+                                <th>등락률</th>
+                                <th>업종</th>
+                                <th>테마</th>
+                                <th>뉴스</th>
+                            </tr>
+                        </thead>
+                        <tbody id="surgeData"></tbody>
+                    </table>
+                </div>
             </div>
 
             <!-- 저점반등주 탭 -->
-            <div class="tab-pane fade" id="rebound">
-                <table class="table table-hover">
-                    <thead>
-                        <tr>
-                            <th>종목명</th>
-                            <th>등락률</th>
-                            <th>반등률</th>
-                            <th>업종</th>
-                            <th>테마</th>
-                            <th class="text-right">5일평균 거래대금</th>
-                        </tr>
-                    </thead>
-                    <tbody id="reboundData"></tbody>
-                </table>
+            <div class="tab-pane fade" id="rebound" role="tabpanel">
+                
+                <!-- 테마 필터 추가 -->
+                <div class="filter-container">
+                    <div class="d-flex align-items-center gap-3">
+                        <div class="theme-container flex-grow-1" id="reboundThemeFilters"></div>
+                        <a class="clear-filters" onclick="clearThemeFilter('rebound')">필터 초기화</a>
+                    </div>
+                </div>
+                <div class="table-responsive">
+                    <table class="table table-hover">
+                        <thead>
+                            <tr>
+                                <th>종목명</th>
+                                <th>등락률</th>
+                                <th>반등률</th>
+                                <th>업종</th>
+                                <th>테마</th>
+                                <th>뉴스</th>
+                            </tr>
+                        </thead>
+                        <tbody id="reboundData"></tbody>
+                    </table>
+                </div>
             </div>
         </div>
     </div>
@@ -257,6 +330,69 @@
             return `<span class="${cls}">${sign}${rate.toFixed(2)}%</span>`;
         }
 
+        // 테마 필터 관련 함수들
+        function initThemeFilters(type, data) {
+            // 모든 테마를 수집하고 중복 제거
+            const allThemes = new Set();
+            data.forEach(item => {
+                if (item.theme) {
+                    const themes = item.theme.split(',').map(theme => theme.trim()).filter(theme => theme);
+                    themes.forEach(theme => allThemes.add(theme));
+                }
+            });
+
+            // 정렬된 테마 리스트 생성
+            const sortedThemes = Array.from(allThemes).sort();
+
+            // 필터 컨테이너에 테마 칩 추가
+            const container = document.getElementById(`${type}ThemeFilters`);
+            if (!container) return;  // 컨테이너가 없으면 중단
+            
+            container.innerHTML = sortedThemes.map(theme => 
+                `<span class="theme-chip" data-theme="${theme}">${theme}</span>`
+            ).join('');
+
+            // 테마 칩 클릭 이벤트 추가
+            container.querySelectorAll('.theme-chip').forEach(chip => {
+                chip.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                    filterTableByTheme(type);
+                });
+            });
+        }
+
+        function clearThemeFilter(type) {
+            // 모든 테마 칩 비활성화
+            document.querySelectorAll(`#${type}ThemeFilters .theme-chip`).forEach(chip => {
+                chip.classList.remove('active');
+            });
+            // 테이블 필터링 초기화
+            filterTableByTheme(type);
+        }
+
+        function filterTableByTheme(type) {
+            const activeThemes = Array.from(document.querySelectorAll(`#${type}ThemeFilters .theme-chip.active`))
+                .map(chip => chip.dataset.theme);
+            
+            const rows = document.querySelectorAll(`#${type}Data tr`);
+            
+            rows.forEach(row => {
+                if (activeThemes.length === 0) {
+                    row.style.display = '';
+                    return;
+                }
+
+                const themeCell = row.querySelector('.theme-cell'); // 테마 컬럼을 클래스로 찾도록 수정
+                if (!themeCell) return;
+
+                const rowThemes = Array.from(themeCell.querySelectorAll('.theme-chip'))
+                    .map(chip => chip.textContent.trim());
+                
+                const hasMatchingTheme = activeThemes.some(theme => rowThemes.includes(theme));
+                row.style.display = hasMatchingTheme ? '' : 'none';
+            });
+        }
+
         // 데이터 로드 및 표시
         async function loadData(type) {
             try {
@@ -268,26 +404,81 @@
                 
                 // 데이터 표시
                 const tbody = document.getElementById(`${type}Data`);
+                tbody.innerHTML = ''; // 테이블 초기화
+
                 if (type === 'surge') {
-                    tbody.innerHTML = data.data.map(item => `
-                        <tr>
-                            <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
-                            <td>${formatChangeRate(item.change_rate)}</td>
-                            <td>${item.industry}</td>
-                            <td>${item.theme}</td>
-                        </tr>
-                    `).join('');
+                    data.data.forEach(item => {
+                        let newsHtml = '-';
+                        if (item.news && item.news.length > 0) {
+                            newsHtml = item.news.map(n => {
+                                let dateStr = '';
+                                if (n.days_diff === 0) {
+                                    dateStr = '오늘';
+                                } else if (n.days_diff !== null && n.days_diff >= 1 && n.days_diff <= 5) {
+                                    dateStr = `${n.days_diff}일전`;
+                                } else {
+                                    dateStr = n.date;
+                                }
+                                return `<a href="${n.url}" target="_blank">${n.title} (${dateStr})</a>`;
+                            }).join('<br>');
+                        }
+                        // 테마를 칩 스타일로 변환
+                        const themeHtml = item.theme ? 
+                            `<div class="theme-container">
+                                ${item.theme.split(',').map(theme => 
+                                    `<span class="theme-chip">${theme.trim()}</span>`
+                                ).join('')}
+                            </div>` : '-';
+
+                        tbody.innerHTML += `
+                            <tr>
+                                <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
+                                <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
+                                <td>${item.industry || '-'}</td>
+                                <td class="theme-cell">${themeHtml}</td>
+                                <td>${newsHtml}</td>
+                            </tr>
+                        `;
+                    });
+                    // 테마 필터 초기화 - 데이터 로드 후 즉시 실행
+                    initThemeFilters('surge', data.data);
                 } else if (type === 'rebound') {
-                    tbody.innerHTML = data.data.map(row => `
-                        <tr>
-                            <td><a href="/stock_detail?code=${row.code}">${row.name}</a></td>
-                            <td>${formatChangeRate(row.change_rate)}</td>
-                            <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
-                            <td>${row.industry || '-'}</td>
-                            <td>${row.theme || '-'}</td>
-                            <td class="text-right">${row.avg_trading_value_5d ? formatNumber(row.avg_trading_value_5d) : '-'}</td>
-                        </tr>
-                    `).join('');
+                    data.data.forEach(row => {
+                        let newsHtml = '-';
+                        if (row.news && row.news.length > 0) {
+                            newsHtml = row.news.map(n => {
+                                let dateStr = '';
+                                if (n.days_diff === 0) {
+                                    dateStr = '오늘';
+                                } else if (n.days_diff !== null && n.days_diff >= 1 && n.days_diff <= 5) {
+                                    dateStr = `${n.days_diff}일전`;
+                                } else {
+                                    dateStr = n.date;
+                                }
+                                return `<a href="${n.url}" target="_blank">${n.title} (${dateStr})</a>`;
+                            }).join('<br>');
+                        }
+                        // 테마를 칩 스타일로 변환
+                        const themeHtml = row.theme ? 
+                            `<div class="theme-container">
+                                ${row.theme.split(',').map(theme => 
+                                    `<span class="theme-chip">${theme.trim()}</span>`
+                                ).join('')}
+                            </div>` : '-';
+
+                        tbody.innerHTML += `
+                            <tr>
+                                <td><a href="/stock_detail?code=${row.code}">${row.name}</a></td>
+                                <td class="${row.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${row.change_rate.toFixed(2)}%</td>
+                                <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
+                                <td>${row.industry || '-'}</td>
+                                <td class="theme-cell">${themeHtml}</td>
+                                <td>${newsHtml}</td>
+                            </tr>
+                        `;
+                    });
+                    // 테마 필터는 테이블 렌더 후 실제 칩 기준으로 생성
+                    renderThemeFilters('rebound');
                 } else {
                     tbody.innerHTML = data.data.map(item => `
                         <tr>
@@ -379,20 +570,40 @@
                     tbody.innerHTML = '';
                     if (data.length === 0) {
                         tbody.innerHTML = '<tr><td colspan="6" class="text-center">데이터 없음</td></tr>';
+                        renderThemeFilters('rebound');
                         return;
                     }
                     data.forEach(row => {
+                        let newsHtml = '-';
+                        if (row.news && row.news.length > 0) {
+                            newsHtml = row.news.map(n => {
+                                let dateStr = '';
+                                if (n.days_diff === 0) {
+                                    dateStr = '오늘';
+                                } else if (n.days_diff !== null && n.days_diff >= 1 && n.days_diff <= 5) {
+                                    dateStr = `${n.days_diff}일전`;
+                                } else {
+                                    dateStr = n.date;
+                                }
+                                return `<a href="${n.url}" target="_blank">${n.title} (${dateStr})</a>`;
+                            }).join('<br>');
+                        }
                         tbody.innerHTML += `
                             <tr>
                                 <td><a href="/stock_detail?code=${row.code}">${row.name}</a></td>
                                 <td class="${row.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${row.change_rate.toFixed(2)}%</td>
                                 <td>${row.rebound_rate != null ? row.rebound_rate.toFixed(2) + '%' : '-'}</td>
                                 <td>${row.industry || '-'}</td>
-                                <td>${row.theme || '-'}</td>
-                                <td class="text-right">${row.avg_trading_value_5d ? formatNumber(row.avg_trading_value_5d) : '-'}</td>
+                                <td class="theme-cell">
+                                    ${row.theme ? `<div class="theme-container">${row.theme.split(',').map(theme => 
+                                        `<span class="theme-chip">${theme.trim()}</span>`
+                                    ).join('')}</div>` : '-'}
+                                </td>
+                                <td>${newsHtml}</td>
                             </tr>
                         `;
                     });
+                    renderThemeFilters('rebound'); // 반드시 테이블 렌더 후 호출
                 });
         }
 
@@ -451,6 +662,7 @@
                 tbody.innerHTML = '';
                 if (!data.data || data.data.length === 0) {
                     tbody.innerHTML = '<tr><td colspan="5" class="text-center">데이터 없음</td></tr>';
+                    renderThemeFilters('surge');
                     return;
                 }
                 data.data.forEach(item => {
@@ -468,16 +680,24 @@
                             return `<a href="${n.url}" target="_blank">${n.title} (${dateStr})</a>`;
                         }).join('<br>');
                     }
+                    // 테마 칩 디자인 적용
+                    const themeHtml = item.theme
+                        ? `<div class="theme-container">${item.theme.split(',').map(theme =>
+                            `<span class="theme-chip">${theme.trim()}</span>`
+                        ).join('')}</div>`
+                        : '-';
+
                     tbody.innerHTML += `
                         <tr>
                             <td><a href="/stock_detail?code=${item.code}">${item.name}</a></td>
                             <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                             <td>${item.industry || '-'}</td>
-                            <td>${item.theme || '-'}</td>
+                            <td class="theme-cell">${themeHtml}</td>
                             <td>${newsHtml}</td>
                         </tr>
                     `;
                 });
+                renderThemeFilters('surge');
             } catch (error) {
                 console.error('급등주 데이터 로딩 실패:', error);
             }
@@ -693,6 +913,46 @@
                 alert('급등주 뉴스 업데이트 실패');
                 setLoading(false, 'full');
             }
+        }
+
+        // 1. 테마 수집 함수
+        function collectAllThemes(type) {
+            const chips = document.querySelectorAll(`#${type}Data tr .theme-cell .theme-chip`);
+            const themes = new Set();
+            chips.forEach(chip => {
+                const t = chip.textContent.trim();
+                if (t && t !== '-') themes.add(t);
+            });
+            return Array.from(themes).sort();
+        }
+
+        // 2. 필터 칩 렌더링 함수
+        function renderThemeFilters(type) {
+            const container = document.getElementById(`${type}ThemeFilters`);
+            if (!container) {
+                console.warn('필터 컨테이너 없음:', type);
+                return;
+            }
+            const chips = document.querySelectorAll(`#${type}Data tr .theme-cell .theme-chip`);
+            console.log('실제 테이블 칩 개수:', chips.length);
+            const themes = new Set();
+            chips.forEach(chip => {
+                const t = chip.textContent.trim();
+                if (t && t !== '-') themes.add(t);
+            });
+            if (themes.size === 0) {
+                container.innerHTML = '<span style="color:#aaa;">테마 없음</span>';
+                return;
+            }
+            container.innerHTML = Array.from(themes).sort().map(theme =>
+                `<span class="theme-chip" data-theme="${theme}">${theme}</span>`
+            ).join('');
+            container.querySelectorAll('.theme-chip').forEach(chip => {
+                chip.addEventListener('click', function() {
+                    this.classList.toggle('active');
+                    filterTableByTheme(type);
+                });
+            });
         }
     </script>
 </body>
