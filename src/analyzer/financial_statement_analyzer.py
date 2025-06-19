@@ -491,9 +491,6 @@ class FinancialStatementAnalyzer:
                     ).format(value=cagr)
                 })
                 results['score'] += score * self.weights['growth']['net_profit_growth']
-        # 평균 점수 계산
-        if results['evaluations']:
-            results['score'] = results['score'] / len(results['evaluations'])
         return results
         
     def _evaluate_profitability(self, data: Dict) -> Dict:
@@ -539,9 +536,6 @@ class FinancialStatementAnalyzer:
                     ).format(value=net_margin)
                 })
                 results['score'] += score * self.weights['profitability']['net_margin']
-        # 평균 점수 계산
-        if results['evaluations']:
-            results['score'] = results['score'] / len(results['evaluations'])
         return results
         
     def _get_latest_valid(self, data_list):
@@ -611,11 +605,6 @@ class FinancialStatementAnalyzer:
                 results['score'] += score * self.weights['stability']['reserve_ratio']
             else:
                 print("[안정성-유보율] 데이터 부족")
-        # 평균 점수 계산
-        if results['evaluations']:
-            total_weight = sum(self.weights['stability'][eval_item['metric']] for eval_item in results['evaluations'])
-            if total_weight > 0:
-                results['score'] = results['score'] / total_weight
         return results
         
     def _evaluate_market_value(self, data: Dict) -> Dict:
@@ -706,9 +695,6 @@ class FinancialStatementAnalyzer:
                 results['score'] += score * self.weights['market_value']['dividend_payout']
             else:
                 print("[시장가치-배당성향] 데이터 부족")
-        # 평균 점수 계산
-        if results['evaluations']:
-            results['score'] = results['score'] / len(results['evaluations'])
         return results
         
     def _get_grade(self, score: float) -> str:
