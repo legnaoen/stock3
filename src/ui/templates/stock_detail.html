@@ -102,10 +102,11 @@
       <tbody id="fin-summary-tbody">
       {% if financial_evaluation %}
         {% set eval_row = financial_evaluation %}
-        <tr><td>성장성</td><td>{{ '%.2f' % eval_row[3] }}</td><td>-</td></tr>
-        <tr><td>수익성</td><td>{{ '%.2f' % eval_row[4] }}</td><td>-</td></tr>
-        <tr><td>안정성</td><td>{{ '%.2f' % eval_row[5] }}</td><td>-</td></tr>
-        <tr><td>시장가치</td><td>{{ '%.2f' % eval_row[6] }}</td><td>-</td></tr>
+        {% set eval_details = eval_details if eval_details is defined else None %}
+        <tr><td>성장성</td><td>{{ '%.2f' % eval_row[3] }}</td><td>{{ eval_details['growth']['description'] if eval_details else '-' }}</td></tr>
+        <tr><td>수익성</td><td>{{ '%.2f' % eval_row[4] }}</td><td>{{ eval_details['profitability']['description'] if eval_details else '-' }}</td></tr>
+        <tr><td>안정성</td><td>{{ '%.2f' % eval_row[5] }}</td><td>{{ eval_details['stability']['description'] if eval_details else '-' }}</td></tr>
+        <tr><td>시장가치</td><td>{{ '%.2f' % eval_row[6] }}</td><td>{{ eval_details['market_value']['description'] if eval_details else '-' }}</td></tr>
         <tr><td><b>종합</b></td><td>{{ '%.2f' % eval_row[7] }}</td><td>{{ eval_row[8] or '-' }}</td></tr>
       {% else %}
         <tr><td>성장성</td><td>-</td><td>-</td></tr>
@@ -121,30 +122,18 @@
     <table class="fin-table">
       <thead>
         <tr>
-          <th>주요재무정보</th>
-          <th>2022.12<br/>IFRS 연결</th>
-          <th>2023.12<br/>IFRS 연결</th>
-          <th>2024.12<br/>IFRS 연결</th>
-          <th>2025.12(E)<br/>IFRS 연결</th>
-          <th>2024.03<br/>IFRS 연결</th>
-          <th>2024.06<br/>IFRS 연결</th>
-          <th>2024.09<br/>IFRS 연결</th>
-          <th>2024.12<br/>IFRS 연결</th>
-          <th>2025.03<br/>IFRS 연결</th>
-          <th>2025.06(E)<br/>IFRS 연결</th>
+          <th rowspan="2">주요재무정보</th>
+          {% for group in header_groups %}
+            <th colspan="{{ group.colspan }}">{{ group.label }}</th>
+          {% endfor %}
+        </tr>
+        <tr>
+          {% for label in col_labels %}
+            <th>{{ label }}</th>
+          {% endfor %}
         </tr>
       </thead>
       <tbody id="fin-info-tbody">
-      {% set columns = [
-        ('2022', 'Y'), ('2023', 'Y'), ('2024', 'Y'), ('2025', 'Y'),
-        ('2024', 'Q1'), ('2024', 'Q2'), ('2024', 'Q3'), ('2024', 'Q4'),
-        ('2025', 'Q1'), ('2025', 'Q2')
-      ] %}
-      {% set col_labels = [
-        '2022.12', '2023.12', '2024.12', '2025.12(E)',
-        '2024.03', '2024.06', '2024.09', '2024.12',
-        '2025.03', '2025.06(E)'
-      ] %}
       {% set metrics = [
         ('매출액(억원)', 4), ('영업이익(억원)', 5), ('당기순이익(억원)', 6),
         ('영업이익률(%)', 7), ('순이익률(%)', 8), ('ROE(%)', 9),
@@ -166,7 +155,7 @@
           </tr>
         {% endfor %}
       {% else %}
-        <tr><td>매출액(억원)</td><td colspan="10" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
+        <tr><td>매출액(억원)</td><td colspan="{{ columns|length }}" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
         <tr><td>영업이익(억원)</td></tr>
         <tr><td>당기순이익(억원)</td></tr>
         <tr><td>영업이익률(%)</td></tr>
@@ -404,7 +393,7 @@ function renderFinancialSummary(evalRow) {
 function renderFinancialInfo(finRow) {
   const tbody = document.getElementById('fin-info-tbody');
   if (!finRow) {
-    tbody.innerHTML = `<tr><td>매출액(억원)</td><td colspan="10" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
+    tbody.innerHTML = `<tr><td>매출액(억원)</td><td colspan="{{ columns|length }}" style="color:gray;">아직 재무정보가 수집되지 않았습니다.</td></tr>
       <tr><td>영업이익(억원)</td></tr>
       <tr><td>당기순이익(억원)</td></tr>
       <tr><td>영업이익률(%)</td></tr>
@@ -425,22 +414,22 @@ function renderFinancialInfo(finRow) {
   // finRow: (ticker, year, period, is_estimate, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout, ...)
   const [ticker, year, period, is_estimate, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout] = finRow;
   tbody.innerHTML = `
-    <tr><td>매출액(억원)</td><td colspan="10">${revenue ?? '-'}</td></tr>
-    <tr><td>영업이익(억원)</td><td colspan="10">${operating_profit ?? '-'}</td></tr>
-    <tr><td>당기순이익(억원)</td><td colspan="10">${net_profit ?? '-'}</td></tr>
-    <tr><td>영업이익률(%)</td><td colspan="10">${operating_margin ?? '-'}</td></tr>
-    <tr><td>순이익률(%)</td><td colspan="10">${net_margin ?? '-'}</td></tr>
-    <tr><td>ROE(%)</td><td colspan="10">${roe ?? '-'}</td></tr>
-    <tr><td>부채비율(%)</td><td colspan="10">${debt_ratio ?? '-'}</td></tr>
-    <tr><td>당좌비율(%)</td><td colspan="10">${quick_ratio ?? '-'}</td></tr>
-    <tr><td>유보율(%)</td><td colspan="10">${reserve_ratio ?? '-'}</td></tr>
-    <tr><td>EPS(원)</td><td colspan="10">${eps ?? '-'}</td></tr>
-    <tr><td>PER(배)</td><td colspan="10">${per ?? '-'}</td></tr>
-    <tr><td>BPS(원)</td><td colspan="10">${bps ?? '-'}</td></tr>
-    <tr><td>PBR(배)</td><td colspan="10">${pbr ?? '-'}</td></tr>
-    <tr><td>주당배당금(원)</td><td colspan="10">${cash_dividend ?? '-'}</td></tr>
-    <tr><td>시가배당률(%)</td><td colspan="10">${dividend_yield ?? '-'}</td></tr>
-    <tr><td>배당성향(%)</td><td colspan="10">${dividend_payout ?? '-'}</td></tr>
+    <tr><td>매출액(억원)</td><td colspan="{{ columns|length }}">${revenue ?? '-'}</td></tr>
+    <tr><td>영업이익(억원)</td><td colspan="{{ columns|length }}">${operating_profit ?? '-'}</td></tr>
+    <tr><td>당기순이익(억원)</td><td colspan="{{ columns|length }}">${net_profit ?? '-'}</td></tr>
+    <tr><td>영업이익률(%)</td><td colspan="{{ columns|length }}">${operating_margin ?? '-'}</td></tr>
+    <tr><td>순이익률(%)</td><td colspan="{{ columns|length }}">${net_margin ?? '-'}</td></tr>
+    <tr><td>ROE(%)</td><td colspan="{{ columns|length }}">${roe ?? '-'}</td></tr>
+    <tr><td>부채비율(%)</td><td colspan="{{ columns|length }}">${debt_ratio ?? '-'}</td></tr>
+    <tr><td>당좌비율(%)</td><td colspan="{{ columns|length }}">${quick_ratio ?? '-'}</td></tr>
+    <tr><td>유보율(%)</td><td colspan="{{ columns|length }}">${reserve_ratio ?? '-'}</td></tr>
+    <tr><td>EPS(원)</td><td colspan="{{ columns|length }}">${eps ?? '-'}</td></tr>
+    <tr><td>PER(배)</td><td colspan="{{ columns|length }}">${per ?? '-'}</td></tr>
+    <tr><td>BPS(원)</td><td colspan="{{ columns|length }}">${bps ?? '-'}</td></tr>
+    <tr><td>PBR(배)</td><td colspan="{{ columns|length }}">${pbr ?? '-'}</td></tr>
+    <tr><td>주당배당금(원)</td><td colspan="{{ columns|length }}">${cash_dividend ?? '-'}</td></tr>
+    <tr><td>시가배당률(%)</td><td colspan="{{ columns|length }}">${dividend_yield ?? '-'}</td></tr>
+    <tr><td>배당성향(%)</td><td colspan="{{ columns|length }}">${dividend_payout ?? '-'}</td></tr>
   `;
 }
 </script>

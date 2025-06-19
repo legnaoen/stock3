@@ -171,8 +171,20 @@ class NaverFinancialCrawler:
                 year = match.group(1)
                 month = match.group(2)
                 is_estimate = '(E)' in period_info
-                period = 'Q' if is_quarterly else 'Y'
-                
+                # 분기 데이터는 Q1~Q4로 저장, 연간은 Y
+                if is_quarterly:
+                    if month == '03':
+                        period = 'Q1'
+                    elif month == '06':
+                        period = 'Q2'
+                    elif month == '09':
+                        period = 'Q3'
+                    elif month == '12':
+                        period = 'Q4'
+                    else:
+                        period = 'Q'  # 예외 처리: 알 수 없는 월
+                else:
+                    period = 'Y'
                 data = {
                     'ticker': ticker,
                     'year': year,

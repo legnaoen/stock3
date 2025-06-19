@@ -323,30 +323,25 @@ class FinancialStatementAnalyzer:
             }
             
     def _get_financial_data(self, ticker: str) -> Dict:
-        """DB에서 재무 데이터를 조회합니다."""
+        """DB에서 재무 데이터를 조회합니다. 각 지표별로 [{'year': y, 'period': p, 'value': v}, ...] 형태로 반환."""
         with sqlite3.connect(self.db_path) as conn:
             cursor = conn.cursor()
-            
-            # 최근 3년간의 재무 데이터 조회
             cursor.execute("""
-                SELECT *
+                SELECT year, period, revenue, operating_profit, net_profit, operating_margin, net_margin, roe, debt_ratio, quick_ratio, reserve_ratio, eps, per, bps, pbr, cash_dividend, dividend_yield, dividend_payout
                 FROM financial_info
-                WHERE ticker = ?
-                ORDER BY period DESC
-                LIMIT 3
+                WHERE ticker = ? AND period = 'Y'
+                ORDER BY year ASC
             """, (ticker,))
-            
-            columns = [description[0] for description in cursor.description]
             rows = cursor.fetchall()
-            
             if not rows:
                 return {}
-                
-            # 데이터 구조화
-            data = {}
-            for col_idx, column in enumerate(columns):
-                data[column] = [row[col_idx] for row in rows]
-                
+            # 각 지표별로 [{'year': y, 'period': p, 'value': v}, ...] 형태로 구조화
+            columns = ['year', 'period', 'revenue', 'operating_profit', 'net_profit', 'operating_margin', 'net_margin', 'roe', 'debt_ratio', 'quick_ratio', 'reserve_ratio', 'eps', 'per', 'bps', 'pbr', 'cash_dividend', 'dividend_yield', 'dividend_payout']
+            data = {col: [] for col in columns[2:]}
+            for row in rows:
+                y, p = row[0], row[1]
+                for idx, col in enumerate(columns[2:], 2):
+                    data[col].append({'year': y, 'period': p, 'value': row[idx]})
             return data
             
     def _get_company_name(self, ticker: str) -> str:
@@ -404,11 +399,14 @@ class FinancialStatementAnalyzer:
             'evaluations': [],
             'score': 0.0
         }
-        
         # 매출액 성장률
-        if 'revenue' in data:
-            growth_rate = self._calculate_growth_rate(data['revenue'])
-            if growth_rate is not None:
+        if 'revenue' in data and len(data['revenue']) >= 2:
+            # 연도별 value 추출 및 정렬
+            values = sorted(data['revenue'], key=lambda x: int(x['year']))
+            start, end = values[0], values[-1]
+            if start['value'] and end['value'] and start['value'] != 0:
+                growth_rate = ((end['value'] / start['value']) - 1) * 100
+                print(f"[성장성-매출액] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
                 score = self._calculate_score(growth_rate, self.thresholds['revenue_growth'])
                 results['evaluations'].append({
                     'metric': 'revenue_growth',
@@ -420,11 +418,13 @@ class FinancialStatementAnalyzer:
                     ).format(value=growth_rate)
                 })
                 results['score'] += score * self.weights['growth']['revenue_growth']
-                
         # 영업이익 성장률
-        if 'operating_profit' in data:
-            growth_rate = self._calculate_growth_rate(data['operating_profit'])
-            if growth_rate is not None:
+        if 'operating_profit' in data and len(data['operating_profit']) >= 2:
+            values = sorted(data['operating_profit'], key=lambda x: int(x['year']))
+            start, end = values[0], values[-1]
+            if start['value'] and end['value'] and start['value'] != 0:
+                growth_rate = ((end['value'] / start['value']) - 1) * 100
+                print(f"[성장성-영업이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
                 score = self._calculate_score(growth_rate, self.thresholds['operating_profit_growth'])
                 results['evaluations'].append({
                     'metric': 'operating_profit_growth',
@@ -436,11 +436,13 @@ class FinancialStatementAnalyzer:
                     ).format(value=growth_rate)
                 })
                 results['score'] += score * self.weights['growth']['operating_profit_growth']
-                
         # 순이익 성장률
-        if 'net_profit' in data:
-            growth_rate = self._calculate_growth_rate(data['net_profit'])
-            if growth_rate is not None:
+        if 'net_profit' in data and len(data['net_profit']) >= 2:
+            values = sorted(data['net_profit'], key=lambda x: int(x['year']))
+            start, end = values[0], values[-1]
+            if start['value'] and end['value'] and start['value'] != 0:
+                growth_rate = ((end['value'] / start['value']) - 1) * 100
+                print(f"[성장성-순이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} 성장률={growth_rate:.2f}%")
                 score = self._calculate_score(growth_rate, self.thresholds['net_profit_growth'])
                 results['evaluations'].append({
                     'metric': 'net_profit_growth',
@@ -452,11 +454,9 @@ class FinancialStatementAnalyzer:
                     ).format(value=growth_rate)
                 })
                 results['score'] += score * self.weights['growth']['net_profit_growth']
-                
         # 평균 점수 계산
         if results['evaluations']:
             results['score'] = results['score'] / len(results['evaluations'])
-        
         return results
         
     def _evaluate_profitability(self, data: Dict) -> Dict:
@@ -465,11 +465,14 @@ class FinancialStatementAnalyzer:
             'evaluations': [],
             'score': 0.0
         }
-        
         # 영업이익률
-        if all(key in data for key in ['operating_profit', 'revenue']):
-            try:
-                operating_margin = (data['operating_profit'][0] / data['revenue'][0]) * 100
+        if 'operating_profit' in data and 'revenue' in data and data['operating_profit'] and data['revenue']:
+            # 최신 연도 데이터만 사용
+            op = max(data['operating_profit'], key=lambda x: int(x['year']))
+            rev = max(data['revenue'], key=lambda x: int(x['year']))
+            if op['value'] and rev['value'] and rev['value'] != 0:
+                operating_margin = (op['value'] / rev['value']) * 100
+                print(f"[수익성-영업이익률] {op['year']}년: {op['value']}, {rev['year']}년: {rev['value']} → {operating_margin:.2f}%")
                 score = self._calculate_score(operating_margin, self.thresholds['operating_margin'])
                 results['evaluations'].append({
                     'metric': 'operating_margin',
@@ -481,13 +484,13 @@ class FinancialStatementAnalyzer:
                     ).format(value=operating_margin)
                 })
                 results['score'] += score * self.weights['profitability']['operating_margin']
-            except (ZeroDivisionError, TypeError):
-                pass
-                
         # 순이익률
-        if all(key in data for key in ['net_profit', 'revenue']):
-            try:
-                net_margin = (data['net_profit'][0] / data['revenue'][0]) * 100
+        if 'net_profit' in data and 'revenue' in data and data['net_profit'] and data['revenue']:
+            np = max(data['net_profit'], key=lambda x: int(x['year']))
+            rev = max(data['revenue'], key=lambda x: int(x['year']))
+            if np['value'] and rev['value'] and rev['value'] != 0:
+                net_margin = (np['value'] / rev['value']) * 100
+                print(f"[수익성-순이익률] {np['year']}년: {np['value']}, {rev['year']}년: {rev['value']} → {net_margin:.2f}%")
                 score = self._calculate_score(net_margin, self.thresholds['net_margin'])
                 results['evaluations'].append({
                     'metric': 'net_margin',
@@ -499,32 +502,17 @@ class FinancialStatementAnalyzer:
                     ).format(value=net_margin)
                 })
                 results['score'] += score * self.weights['profitability']['net_margin']
-            except (ZeroDivisionError, TypeError):
-                pass
-                
-        # ROE
-        if all(key in data for key in ['net_profit', 'equity']):
-            try:
-                roe = (data['net_profit'][0] / data['equity'][0]) * 100
-                score = self._calculate_score(roe, self.thresholds['roe'])
-                results['evaluations'].append({
-                    'metric': 'roe',
-                    'value': roe,
-                    'score': score,
-                    'description': self.templates['roe'].get(
-                        self._get_grade(score),
-                        self.templates['roe']['보통']
-                    ).format(value=roe)
-                })
-                results['score'] += score * self.weights['profitability']['roe']
-            except (ZeroDivisionError, TypeError):
-                pass
-                
         # 평균 점수 계산
         if results['evaluations']:
             results['score'] = results['score'] / len(results['evaluations'])
-            
         return results
+        
+    def _get_latest_valid(self, data_list):
+        """최신 연도부터 값이 있는 첫 번째 데이터 반환."""
+        for item in sorted(data_list, key=lambda x: int(x['year']), reverse=True):
+            if item['value'] is not None and item['value'] != 0:
+                return item
+        return None
         
     def _evaluate_stability(self, data: Dict) -> Dict:
         """안정성 지표를 평가합니다."""
@@ -532,61 +520,65 @@ class FinancialStatementAnalyzer:
             'evaluations': [],
             'score': 0.0
         }
-        
         # 부채비율
-        if 'debt_ratio' in data:
-            debt_ratio = data['debt_ratio'][0]
-            if debt_ratio is not None:
-                score = self._calculate_score(debt_ratio, self.thresholds['debt_ratio'])
+        if 'debt_ratio' in data and data['debt_ratio']:
+            dr = self._get_latest_valid(data['debt_ratio'])
+            if dr:
+                print(f"[안정성-부채비율] {dr['year']}년: {dr['value']}")
+                score = self._calculate_score(dr['value'], self.thresholds['debt_ratio'])
                 results['evaluations'].append({
                     'metric': 'debt_ratio',
-                    'value': debt_ratio,
+                    'value': dr['value'],
                     'score': score,
                     'description': self.templates['debt_ratio'].get(
                         self._get_grade(score),
                         self.templates['debt_ratio']['보통']
-                    ).format(value=debt_ratio)
+                    ).format(value=dr['value']) + f" (평가연도: {dr['year']})"
                 })
                 results['score'] += score * self.weights['stability']['debt_ratio']
-                
+            else:
+                print("[안정성-부채비율] 데이터 부족")
         # 당좌비율
-        if 'quick_ratio' in data:
-            quick_ratio = data['quick_ratio'][0]
-            if quick_ratio is not None:
-                score = self._calculate_score(quick_ratio, self.thresholds['quick_ratio'])
+        if 'quick_ratio' in data and data['quick_ratio']:
+            qr = self._get_latest_valid(data['quick_ratio'])
+            if qr:
+                print(f"[안정성-당좌비율] {qr['year']}년: {qr['value']}")
+                score = self._calculate_score(qr['value'], self.thresholds['quick_ratio'])
                 results['evaluations'].append({
                     'metric': 'quick_ratio',
-                    'value': quick_ratio,
+                    'value': qr['value'],
                     'score': score,
                     'description': self.templates['quick_ratio'].get(
                         self._get_grade(score),
                         self.templates['quick_ratio']['보통']
-                    ).format(value=quick_ratio)
+                    ).format(value=qr['value']) + f" (평가연도: {qr['year']})"
                 })
                 results['score'] += score * self.weights['stability']['quick_ratio']
-                
+            else:
+                print("[안정성-당좌비율] 데이터 부족")
         # 유보율
-        if 'reserve_ratio' in data:
-            reserve_ratio = data['reserve_ratio'][0]
-            if reserve_ratio is not None:
-                score = self._calculate_score(reserve_ratio, self.thresholds['reserve_ratio'])
+        if 'reserve_ratio' in data and data['reserve_ratio']:
+            rr = self._get_latest_valid(data['reserve_ratio'])
+            if rr:
+                print(f"[안정성-유보율] {rr['year']}년: {rr['value']}")
+                score = self._calculate_score(rr['value'], self.thresholds['reserve_ratio'])
                 results['evaluations'].append({
                     'metric': 'reserve_ratio',
-                    'value': reserve_ratio,
+                    'value': rr['value'],
                     'score': score,
                     'description': self.templates['reserve_ratio'].get(
                         self._get_grade(score),
                         self.templates['reserve_ratio']['보통']
-                    ).format(value=reserve_ratio)
+                    ).format(value=rr['value']) + f" (평가연도: {rr['year']})"
                 })
                 results['score'] += score * self.weights['stability']['reserve_ratio']
-                
+            else:
+                print("[안정성-유보율] 데이터 부족")
         # 평균 점수 계산
         if results['evaluations']:
             total_weight = sum(self.weights['stability'][eval_item['metric']] for eval_item in results['evaluations'])
             if total_weight > 0:
                 results['score'] = results['score'] / total_weight
-            
         return results
         
     def _evaluate_market_value(self, data: Dict) -> Dict:
@@ -595,78 +587,83 @@ class FinancialStatementAnalyzer:
             'evaluations': [],
             'score': 0.0
         }
-        
         # PER
-        if 'per' in data:
-            per = data['per'][0]
-            if per is not None and per > 0:  # 적자 기업 제외
-                score = self._calculate_score(per, self.thresholds['per'])
+        if 'per' in data and data['per']:
+            per = self._get_latest_valid(data['per'])
+            if per and per['value'] > 0:
+                print(f"[시장가치-PER] {per['year']}년: {per['value']}")
+                score = self._calculate_score(per['value'], self.thresholds['per'])
                 results['evaluations'].append({
                     'metric': 'per',
-                    'value': per,
+                    'value': per['value'],
                     'score': score,
                     'description': self.templates['per'].get(
                         self._get_grade(score),
                         self.templates['per']['보통']
-                    ).format(value=per)
+                    ).format(value=per['value']) + f" (평가연도: {per['year']})"
                 })
                 results['score'] += score * self.weights['market_value']['per']
-                
+            else:
+                print("[시장가치-PER] 데이터 부족")
         # PBR
-        if 'pbr' in data:
-            pbr = data['pbr'][0]
-            if pbr is not None and pbr > 0:
-                score = self._calculate_score(pbr, self.thresholds['pbr'])
+        if 'pbr' in data and data['pbr']:
+            pbr = self._get_latest_valid(data['pbr'])
+            if pbr and pbr['value'] > 0:
+                print(f"[시장가치-PBR] {pbr['year']}년: {pbr['value']}")
+                score = self._calculate_score(pbr['value'], self.thresholds['pbr'])
                 results['evaluations'].append({
                     'metric': 'pbr',
-                    'value': pbr,
+                    'value': pbr['value'],
                     'score': score,
                     'description': self.templates['pbr'].get(
                         self._get_grade(score),
                         self.templates['pbr']['보통']
-                    ).format(value=pbr)
+                    ).format(value=pbr['value']) + f" (평가연도: {pbr['year']})"
                 })
                 results['score'] += score * self.weights['market_value']['pbr']
-                
+            else:
+                print("[시장가치-PBR] 데이터 부족")
         # 배당수익률
-        if 'dividend_yield' in data:
-            dividend_yield = data['dividend_yield'][0]
-            if dividend_yield is not None:
-                score = self._calculate_score(dividend_yield, self.thresholds['dividend_yield'])
+        if 'dividend_yield' in data and data['dividend_yield']:
+            dy = self._get_latest_valid(data['dividend_yield'])
+            if dy:
+                print(f"[시장가치-배당수익률] {dy['year']}년: {dy['value']}")
+                score = self._calculate_score(dy['value'], self.thresholds['dividend_yield'])
                 results['evaluations'].append({
                     'metric': 'dividend_yield',
-                    'value': dividend_yield,
+                    'value': dy['value'],
                     'score': score,
                     'description': self.templates['dividend_yield'].get(
                         self._get_grade(score),
                         self.templates['dividend_yield']['보통']
-                    ).format(value=dividend_yield)
+                    ).format(value=dy['value']) + f" (평가연도: {dy['year']})"
                 })
                 results['score'] += score * self.weights['market_value']['dividend_yield']
-                
+            else:
+                print("[시장가치-배당수익률] 데이터 부족")
         # 배당성향
-        if all(key in data for key in ['cash_dividend', 'eps']):
-            try:
-                if data['eps'][0] > 0:  # 적자 기업 제외
-                    dividend_payout = (data['cash_dividend'][0] / data['eps'][0]) * 100
-                    score = self._calculate_score(dividend_payout, self.thresholds['dividend_payout'])
-                    results['evaluations'].append({
-                        'metric': 'dividend_payout',
-                        'value': dividend_payout,
-                        'score': score,
-                        'description': self.templates['dividend_payout'].get(
-                            self._get_grade(score),
-                            self.templates['dividend_payout']['보통']
-                        ).format(value=dividend_payout)
-                    })
-                    results['score'] += score * self.weights['market_value']['dividend_payout']
-            except (ZeroDivisionError, TypeError):
-                pass
-                
+        if 'cash_dividend' in data and 'eps' in data and data['cash_dividend'] and data['eps']:
+            cd = self._get_latest_valid(data['cash_dividend'])
+            eps = self._get_latest_valid(data['eps'])
+            if eps and eps['value'] > 0:
+                dividend_payout = (cd['value'] / eps['value']) * 100
+                print(f"[시장가치-배당성향] {cd['year']}년: {cd['value']}, {eps['year']}년: {eps['value']} → {dividend_payout:.2f}%")
+                score = self._calculate_score(dividend_payout, self.thresholds['dividend_payout'])
+                results['evaluations'].append({
+                    'metric': 'dividend_payout',
+                    'value': dividend_payout,
+                    'score': score,
+                    'description': self.templates['dividend_payout'].get(
+                        self._get_grade(score),
+                        self.templates['dividend_payout']['보통']
+                    ).format(value=dividend_payout) + f" (평가연도: {cd['year']}, {eps['year']})"
+                })
+                results['score'] += score * self.weights['market_value']['dividend_payout']
+            else:
+                print("[시장가치-배당성향] 데이터 부족")
         # 평균 점수 계산
         if results['evaluations']:
             results['score'] = results['score'] / len(results['evaluations'])
-            
         return results
         
     def _get_grade(self, score: float) -> str:

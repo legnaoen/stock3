@@ -657,8 +657,52 @@ def stock_detail():
         # 재무정보/평가 쿼리 추가
         cursor.execute("SELECT * FROM financial_info WHERE ticker = ? ORDER BY year DESC, period DESC", (code,))
         financial_info_list = cursor.fetchall()
+        # (year, period) 조합 동적 추출 및 label 생성 (2단 헤더용)
+        annual_columns = []
+        annual_labels = []
+        quarterly_columns = []
+        quarterly_labels = []
+        month_map = {'Q1': '03', 'Q2': '06', 'Q3': '09', 'Q4': '12'}
+        # 연간: Y, 분기: Q1~Q4
+        for row in financial_info_list:
+            y, p = row[1], row[2]
+            if p == 'Y' and (y, p) not in annual_columns:
+                annual_columns.append((y, p))
+                annual_labels.append(f"{y}.12")
+            elif p in month_map and (y, p) not in quarterly_columns:
+                quarterly_columns.append((y, p))
+                quarterly_labels.append(f"{y}.{month_map[p]}")
+        # 정렬: 연간은 year 오름차순, 분기는 (year, Q1~Q4) 오름차순
+        annual_columns, annual_labels = zip(*sorted(zip(annual_columns, annual_labels), key=lambda x: x[0][0])) if annual_columns else ([],[])
+        quarterly_columns, quarterly_labels = zip(*sorted(zip(quarterly_columns, quarterly_labels), key=lambda x: (x[0][0], x[0][1]))) if quarterly_columns else ([],[])
+        # 2단 헤더용 그룹
+        header_groups = [
+            {'label': '최근 연간 실적', 'colspan': len(annual_columns)},
+            {'label': '최근 분기 실적', 'colspan': len(quarterly_columns)}
+        ]
+        all_columns = list(annual_columns) + list(quarterly_columns)
+        all_labels = list(annual_labels) + list(quarterly_labels)
         cursor.execute("SELECT * FROM financial_evaluation WHERE ticker = ? ORDER BY eval_date DESC, created_at DESC LIMIT 1", (code,))
         financial_evaluation = cursor.fetchone()
+        eval_details = None
+        if financial_evaluation and financial_evaluation[9]:
+            import json
+            try:
+                details = json.loads(financial_evaluation[9])
+                eval_details = {}
+                for area in ['growth', 'profitability', 'stability', 'market_value']:
+                    if area in details:
+                        # 여러 평가 중 가장 낮은 점수의 description을 대표로 사용
+                        evals = details[area].get('evaluations', [])
+                        if evals:
+                            min_eval = min(evals, key=lambda x: x.get('score', 5))
+                            eval_details[area] = {'description': min_eval.get('description', '-')}
+                        else:
+                            eval_details[area] = {'description': '-'}
+                    else:
+                        eval_details[area] = {'description': '-'}
+            except Exception:
+                eval_details = None
     return render_template('stock_detail.html',
         stock_name=stock_info.get('name', '정보 없음'),
         stock_code=code,
@@ -674,7 +718,13 @@ def stock_detail():
         news_list=news_list,
         rebound_rate=rebound_rate,
         financial_info_list=financial_info_list,
-        financial_evaluation=financial_evaluation
+        financial_evaluation=financial_evaluation,
+        columns=all_columns,
+        col_labels=all_labels,
+        header_groups=header_groups,
+        annual_len=len(annual_columns),
+        quarterly_len=len(quarterly_columns),
+        eval_details=eval_details
     )
 
 @app.route('/api/stock/<code>/ohlcv')
