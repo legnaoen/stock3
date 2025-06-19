@@ -70,15 +70,15 @@ class FinancialStatementAnalyzer:
                 '매우_좋음': 20.0, '좋음': 15.0, '보통': 10.0, '나쁨': 5.0, '매우_나쁨': 0.0
             },
             
-            # 안정성 지표 (낮을수록 좋음)
+            # 안정성 지표 (강화된 기준)
             'debt_ratio': {
-                '매우_좋음': 50.0, '좋음': 100.0, '보통': 150.0, '나쁨': 200.0, '매우_나쁨': 400.0
+                '매우_좋음': 50.0, '좋음': 70.0, '보통': 100.0, '나쁨': 150.0, '매우_나쁨': 200.0
             },
             'quick_ratio': {
-                '매우_좋음': 150.0, '좋음': 100.0, '보통': 70.0, '나쁨': 50.0, '매우_나쁨': 0.0
+                '매우_좋음': 150.0, '좋음': 120.0, '보통': 100.0, '나쁨': 80.0, '매우_나쁨': 50.0
             },
             'reserve_ratio': {
-                '매우_좋음': 500.0, '좋음': 300.0, '보통': 200.0, '나쁨': 100.0, '매우_나쁨': 0.0
+                '매우_좋음': 500.0, '좋음': 300.0, '보통': 250.0, '나쁨': 150.0, '매우_나쁨': 50.0
             },
             
             # 시장가치 지표 (PER, PBR은 낮을수록 좋음, 배당지표는 높을수록 좋음)
@@ -203,7 +203,7 @@ class FinancialStatementAnalyzer:
             '매우_좋음': '{company_name}은(는) 전반적으로 매우 우수한 재무 상태를 보이고 있습니다. 성장성, 수익성, 안정성이 모두 뛰어나며, 적극적인 매수를 추천합니다.',
             '좋음': '{company_name}은(는) 전반적으로 양호한 재무 상태를 보이고 있습니다. 현재 주가 수준에서 매수를 고려해볼 만합니다.',
             '보통': '{company_name}은(는) 전반적으로 무난한 재무 상태를 보이고 있습니다. 현재 주가 수준에서는 보유가 적절해 보입니다.',
-            '나쁨': '{company_name}은(는) 성장성 둔화, 수익성 저하 또는 재무 안정성 측면에서 주의가 필요합니다. 투자 결정 시 신중한 검토가 요구되며, 관망 의견을 제시합니다.',
+            '나쁨': '{company_name}은(는) 성장성 둔화, 수익성 저하 또는 재무 안정성 측면에서 주의가 필요합니다. 투자 결정 시 신중한 검토가 요구되며, 매도유의 의견을 제시합니다.',
             '매우_나쁨': '{company_name}은(는) 주요 재무 지표가 전반적으로 악화되고 있어 심각한 재무 위험에 직면해 있습니다. 지속적인 모니터링과 개선 노력이 없다면 기업 가치 하락이 예상됩니다. 매도 의견을 제시합니다.'
         }
         
@@ -432,123 +432,179 @@ class FinancialStatementAnalyzer:
                 return 1.0
             
     def _evaluate_growth(self, data: Dict) -> Dict:
-        """성장성 지표를 평가합니다. (CAGR 공식 적용)"""
+        """성장성 지표를 평가합니다. (CAGR 공식 적용, 실제값만 사용, 음수/0 예외처리, 템플릿 메시지 적용)"""
         results = {
             'evaluations': [],
             'score': 0.0
         }
         # 매출액 성장률 (CAGR)
-        if 'revenue' in data and len(data['revenue']) >= 2:
+        if 'revenue' in data:
             values = sorted(data['revenue'], key=lambda x: int(x['year']))
-            start, end = values[0], values[-1]
-            years = int(end['year']) - int(start['year'])
-            if start['value'] and end['value'] and years > 0:
-                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
-                print(f"[성장성-매출액] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
-                score = self._calculate_score(cagr, self.thresholds['revenue_growth'])
-                grade = self._get_grade(score)
-                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
-                results['evaluations'].append({
-                    'metric': 'revenue_growth',
-                    'value': cagr,
-                    'score': score,
-                    'description': self.templates['revenue_growth'].get(
-                        template_key,
-                        self.templates['revenue_growth']['보통']
-                    ).format(value=cagr)
-                })
-                results['score'] += score * self.weights['growth']['revenue_growth']
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if len(valid_values) >= 2:
+                start, end = valid_values[0], valid_values[-1]
+                years = int(end['year']) - int(start['year'])
+                if years > 0:
+                    if start['value'] <= 0 or end['value'] <= 0:
+                        cagr = None
+                        score = 0.0
+                        grade = '매우_나쁨'
+                        template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                        desc = self.templates['revenue_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                    else:
+                        cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                        if isinstance(cagr, complex):
+                            score = 0.0
+                            grade = '매우_나쁨'
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['revenue_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                        else:
+                            score = self._calculate_score(cagr, self.thresholds['revenue_growth'])
+                            grade = self._get_grade(score)
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['revenue_growth'][template_key].format(value=cagr) + f" (평가연도: {start['year']}→{end['year']})"
+                    results['evaluations'].append({
+                        'metric': 'revenue_growth',
+                        'value': cagr if cagr is not None else 0.0,
+                        'score': score,
+                        'description': desc
+                    })
         # 영업이익 성장률 (CAGR)
-        if 'operating_profit' in data and len(data['operating_profit']) >= 2:
+        if 'operating_profit' in data:
             values = sorted(data['operating_profit'], key=lambda x: int(x['year']))
-            start, end = values[0], values[-1]
-            years = int(end['year']) - int(start['year'])
-            if start['value'] and end['value'] and years > 0:
-                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
-                print(f"[성장성-영업이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
-                score = self._calculate_score(cagr, self.thresholds['operating_profit_growth'])
-                grade = self._get_grade(score)
-                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
-                results['evaluations'].append({
-                    'metric': 'operating_profit_growth',
-                    'value': cagr,
-                    'score': score,
-                    'description': self.templates['operating_profit_growth'].get(
-                        template_key,
-                        self.templates['operating_profit_growth']['보통']
-                    ).format(value=cagr)
-                })
-                results['score'] += score * self.weights['growth']['operating_profit_growth']
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if len(valid_values) >= 2:
+                start, end = valid_values[0], valid_values[-1]
+                years = int(end['year']) - int(start['year'])
+                if years > 0:
+                    if start['value'] <= 0 or end['value'] <= 0:
+                        cagr = None
+                        score = 0.0
+                        grade = '매우_나쁨'
+                        template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                        desc = self.templates['operating_profit_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                    else:
+                        cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                        if isinstance(cagr, complex):
+                            score = 0.0
+                            grade = '매우_나쁨'
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['operating_profit_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                        else:
+                            score = self._calculate_score(cagr, self.thresholds['operating_profit_growth'])
+                            grade = self._get_grade(score)
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['operating_profit_growth'][template_key].format(value=cagr) + f" (평가연도: {start['year']}→{end['year']})"
+                    results['evaluations'].append({
+                        'metric': 'operating_profit_growth',
+                        'value': cagr if cagr is not None else 0.0,
+                        'score': score,
+                        'description': desc
+                    })
         # 순이익 성장률 (CAGR)
-        if 'net_profit' in data and len(data['net_profit']) >= 2:
+        if 'net_profit' in data:
             values = sorted(data['net_profit'], key=lambda x: int(x['year']))
-            start, end = values[0], values[-1]
-            years = int(end['year']) - int(start['year'])
-            if start['value'] and end['value'] and years > 0:
-                cagr = self._calculate_growth_rate([start['value'], end['value']], years)
-                print(f"[성장성-순이익] {start['year']}→{end['year']}: {start['value']}→{end['value']} CAGR={cagr:.2f}%")
-                score = self._calculate_score(cagr, self.thresholds['net_profit_growth'])
-                grade = self._get_grade(score)
-                template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
-                results['evaluations'].append({
-                    'metric': 'net_profit_growth',
-                    'value': cagr,
-                    'score': score,
-                    'description': self.templates['net_profit_growth'].get(
-                        template_key,
-                        self.templates['net_profit_growth']['보통']
-                    ).format(value=cagr)
-                })
-                results['score'] += score * self.weights['growth']['net_profit_growth']
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if len(valid_values) >= 2:
+                start, end = valid_values[0], valid_values[-1]
+                years = int(end['year']) - int(start['year'])
+                if years > 0:
+                    if start['value'] <= 0 or end['value'] <= 0:
+                        cagr = None
+                        score = 0.0
+                        grade = '매우_나쁨'
+                        template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                        desc = self.templates['net_profit_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                    else:
+                        cagr = self._calculate_growth_rate([start['value'], end['value']], years)
+                        if isinstance(cagr, complex):
+                            score = 0.0
+                            grade = '매우_나쁨'
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['net_profit_growth'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                        else:
+                            score = self._calculate_score(cagr, self.thresholds['net_profit_growth'])
+                            grade = self._get_grade(score)
+                            template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                            desc = self.templates['net_profit_growth'][template_key].format(value=cagr) + f" (평가연도: {start['year']}→{end['year']})"
+                    results['evaluations'].append({
+                        'metric': 'net_profit_growth',
+                        'value': cagr if cagr is not None else 0.0,
+                        'score': score,
+                        'description': desc
+                    })
+        # 가중 평균 점수 계산
+        scores = [e['score'] for e in results['evaluations']]
+        if scores:
+            results['score'] = round(
+                scores[0] * 0.4 + (scores[1] if len(scores)>1 else 0) * 0.3 + (scores[2] if len(scores)>2 else 0) * 0.3, 2)
         return results
         
     def _evaluate_profitability(self, data: Dict) -> Dict:
-        """수익성 지표를 평가합니다."""
+        """수익성 지표를 평가합니다. (실제값만 사용, 음수/0 예외처리, 템플릿 메시지 적용)"""
         results = {
             'evaluations': [],
             'score': 0.0
         }
         # 영업이익률
-        if 'operating_profit' in data and 'revenue' in data and data['operating_profit'] and data['revenue']:
-            # 최신 연도 데이터만 사용
-            op = max(data['operating_profit'], key=lambda x: int(x['year']))
-            rev = max(data['revenue'], key=lambda x: int(x['year']))
-            if op['value'] and rev['value'] and rev['value'] != 0:
-                operating_margin = (op['value'] / rev['value']) * 100
-                print(f"[수익성-영업이익률] {op['year']}년: {op['value']}, {rev['year']}년: {rev['value']} → {operating_margin:.2f}%")
-                score = self._calculate_score(operating_margin, self.thresholds['operating_margin'])
+        if 'operating_margin' in data:
+            values = sorted(data['operating_margin'], key=lambda x: int(x['year']))
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if valid_values:
+                end = valid_values[-1]
+                score = self._calculate_score(end['value'], self.thresholds['operating_margin'])
                 grade = self._get_grade(score)
                 template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                desc = self.templates['operating_margin'][template_key].format(value=end['value']) + f" (평가연도: {end['year']})"
                 results['evaluations'].append({
                     'metric': 'operating_margin',
-                    'value': operating_margin,
+                    'value': end['value'],
                     'score': score,
-                    'description': self.templates['operating_margin'].get(
-                        template_key,
-                        self.templates['operating_margin']['보통']
-                    ).format(value=operating_margin)
+                    'description': desc
                 })
-                results['score'] += score * self.weights['profitability']['operating_margin']
         # 순이익률
-        if 'net_profit' in data and 'revenue' in data and data['net_profit'] and data['revenue']:
-            np = max(data['net_profit'], key=lambda x: int(x['year']))
-            rev = max(data['revenue'], key=lambda x: int(x['year']))
-            if np['value'] and rev['value'] and rev['value'] != 0:
-                net_margin = (np['value'] / rev['value']) * 100
-                print(f"[수익성-순이익률] {np['year']}년: {np['value']}, {rev['year']}년: {rev['value']} → {net_margin:.2f}%")
-                score = self._calculate_score(net_margin, self.thresholds['net_margin'])
+        if 'net_margin' in data:
+            values = sorted(data['net_margin'], key=lambda x: int(x['year']))
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if valid_values:
+                end = valid_values[-1]
+                score = self._calculate_score(end['value'], self.thresholds['net_margin'])
                 grade = self._get_grade(score)
                 template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                desc = self.templates['net_margin'][template_key].format(value=end['value']) + f" (평가연도: {end['year']})"
                 results['evaluations'].append({
                     'metric': 'net_margin',
-                    'value': net_margin,
+                    'value': end['value'],
                     'score': score,
-                    'description': self.templates['net_margin'].get(
-                        template_key,
-                        self.templates['net_margin']['보통']
-                    ).format(value=net_margin)
+                    'description': desc
                 })
-                results['score'] += score * self.weights['profitability']['net_margin']
+        # ROE
+        if 'roe' in data:
+            values = sorted(data['roe'], key=lambda x: int(x['year']))
+            valid_values = [v for v in values if isinstance(v['value'], (int, float)) and v['value'] is not None]
+            if valid_values:
+                end = valid_values[-1]
+                if end['value'] <= 0:
+                    score = 0.0
+                    grade = '매우_나쁨'
+                    template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                    desc = self.templates['roe'][template_key].format(value=0.0) + f" (평가연도: {end['year']})"
+                else:
+                    score = self._calculate_score(end['value'], self.thresholds['roe'])
+                    grade = self._get_grade(score)
+                    template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
+                    desc = self.templates['roe'][template_key].format(value=end['value']) + f" (평가연도: {end['year']})"
+                results['evaluations'].append({
+                    'metric': 'roe',
+                    'value': end['value'],
+                    'score': score,
+                    'description': desc
+                })
+        # 가중 평균 점수 계산
+        scores = [e['score'] for e in results['evaluations']]
+        if scores:
+            results['score'] = round(
+                scores[0] * 0.4 + (scores[1] if len(scores)>1 else 0) * 0.3 + (scores[2] if len(scores)>2 else 0) * 0.3, 2)
         return results
         
     def _get_latest_valid(self, data_list):
@@ -632,30 +688,47 @@ class FinancialStatementAnalyzer:
             'evaluations': [],
             'score': 0.0
         }
-        # PER
+        # PER (동일업종 평균 대비 상대평가)
         per = self._get_latest_valid(data.get('per', []))
         industry_per = self._get_latest_valid(data.get('industry_per', []))
-        if per and per['value'] > 0:
+        if per and industry_per and per['value'] is not None and industry_per['value'] is not None:
+            company_per = per['value']
+            avg_per = industry_per['value']
             rel_desc = ''
-            if industry_per and industry_per['value']:
-                diff = per['value'] - industry_per['value']
-                if abs(diff) < 0.5:
-                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배와 유사)"
-                elif diff < 0:
-                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배 대비 저평가)"
+            if avg_per > 0 and company_per > 0:
+                per_ratio = company_per / avg_per
+                if per_ratio <= 0.60:
+                    score = 5.0
+                elif per_ratio <= 0.80:
+                    score = 4.0
+                elif per_ratio <= 1.00:
+                    score = 3.0
+                elif per_ratio <= 1.20:
+                    score = 2.0
+                elif per_ratio <= 1.50:
+                    score = 1.0
                 else:
-                    rel_desc = f" (동일업종 평균 {industry_per['value']:.2f}배 대비 고평가)"
-            score = self._calculate_score(per['value'], self.thresholds['per'])
+                    score = 0.0
+                # 설명
+                if abs(per_ratio-1) < 0.05:
+                    rel_desc = f" (동일업종 평균 {avg_per:.2f}배와 유사)"
+                elif per_ratio < 1:
+                    rel_desc = f" (동일업종 평균 {avg_per:.2f}배 대비 저평가)"
+                else:
+                    rel_desc = f" (동일업종 평균 {avg_per:.2f}배 대비 고평가)"
+            else:
+                score = 0.0
+                rel_desc = f" (PER 계산 불가: PER={company_per}, 업종평균={avg_per})"
             grade = self._get_grade(score)
             template_key = self.GRADE_TO_TEMPLATE_KEY.get(grade, '보통')
             results['evaluations'].append({
                 'metric': 'per',
-                'value': per['value'],
+                'value': company_per,
                 'score': score,
                 'description': self.templates['per'].get(
                     template_key,
                     self.templates['per']['보통']
-                ).format(value=per['value']) + rel_desc + f" (평가연도: {per['year']})"
+                ).format(value=company_per) + rel_desc + f" (평가연도: {per['year']})"
             })
             results['score'] += score * self.weights['market_value']['per']
         else:

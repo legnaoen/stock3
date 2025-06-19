@@ -31,6 +31,10 @@
         .fin-table td:first-child, .fin-table th:first-child {
           text-align: left;
         }
+        .fin-table td.score-col, .fin-table th.score-col,
+        .fin-table td.opinion-col, .fin-table th.opinion-col {
+          text-align: left;
+        }
     </style>
 </head>
 <body>
@@ -95,25 +99,25 @@
       <thead>
         <tr>
           <th>평가영역</th>
-          <th>점수</th>
-          <th>의견</th>
+          <th class="score-col">점수</th>
+          <th class="opinion-col">의견</th>
         </tr>
       </thead>
       <tbody id="fin-summary-tbody">
       {% if financial_evaluation %}
         {% set eval_row = financial_evaluation %}
         {% set eval_details = eval_details if eval_details is defined and eval_details else {} %}
-        <tr><td>성장성</td><td>{{ '%.2f' % eval_row[3] }}{% if eval_details.get('growth', {}).get('grade') %} ({{ eval_details.get('growth', {}).get('grade') }}){% endif %}</td><td>{{ eval_details.get('growth', {}).get('description', '-') }}</td></tr>
-        <tr><td>수익성</td><td>{{ '%.2f' % eval_row[4] }}{% if eval_details.get('profitability', {}).get('grade') %} ({{ eval_details.get('profitability', {}).get('grade') }}){% endif %}</td><td>{{ eval_details.get('profitability', {}).get('description', '-') }}</td></tr>
-        <tr><td>안정성</td><td>{{ '%.2f' % eval_row[5] }}{% if eval_details.get('stability', {}).get('grade') %} ({{ eval_details.get('stability', {}).get('grade') }}){% endif %}</td><td>{{ eval_details.get('stability', {}).get('description', '-') }}</td></tr>
-        <tr><td>시장가치</td><td>{{ '%.2f' % eval_row[6] }}{% if eval_details.get('market_value', {}).get('grade') %} ({{ eval_details.get('market_value', {}).get('grade') }}){% endif %}</td><td>{{ eval_details.get('market_value', {}).get('description', '-') }}</td></tr>
-        <tr><td><b>종합</b></td><td>{{ '%.2f' % eval_row[7] }}{% if eval_details.get('total_grade') %} ({{ eval_details.get('total_grade') }}){% endif %}</td><td>{{ eval_row[8] or '-' }}</td></tr>
+        <tr><td>성장성</td><td class="score-col">{{ '%.2f' % eval_row[3] }}{% if eval_details.get('growth', {}).get('grade') %} ({{ eval_details.get('growth', {}).get('grade') }}){% endif %}</td><td class="opinion-col">{% for desc in eval_details.get('growth', {}).get('descriptions', []) %}<div>{{ desc }}</div>{% endfor %}</td></tr>
+        <tr><td>수익성</td><td class="score-col">{{ '%.2f' % eval_row[4] }}{% if eval_details.get('profitability', {}).get('grade') %} ({{ eval_details.get('profitability', {}).get('grade') }}){% endif %}</td><td class="opinion-col">{% for desc in eval_details.get('profitability', {}).get('descriptions', []) %}<div>{{ desc }}</div>{% endfor %}</td></tr>
+        <tr><td>안정성</td><td class="score-col">{{ '%.2f' % eval_row[5] }}{% if eval_details.get('stability', {}).get('grade') %} ({{ eval_details.get('stability', {}).get('grade') }}){% endif %}</td><td class="opinion-col">{% for desc in eval_details.get('stability', {}).get('descriptions', []) %}<div>{{ desc }}</div>{% endfor %}</td></tr>
+        <tr><td>시장가치</td><td class="score-col">{{ '%.2f' % eval_row[6] }}{% if eval_details.get('market_value', {}).get('grade') %} ({{ eval_details.get('market_value', {}).get('grade') }}){% endif %}</td><td class="opinion-col">{% for desc in eval_details.get('market_value', {}).get('descriptions', []) %}<div>{{ desc }}</div>{% endfor %}</td></tr>
+        <tr><td><b>종합</b></td><td class="score-col">{{ '%.2f' % eval_row[7] }}{% if eval_details.get('total_grade') %} ({{ eval_details.get('total_grade') }}){% endif %}</td><td class="opinion-col">{{ eval_row[8] }}{% if eval_row[12] %}: {{ eval_row[12] }}{% endif %}</td></tr>
       {% else %}
-        <tr><td>성장성</td><td>-</td><td>-</td></tr>
-        <tr><td>수익성</td><td>-</td><td>-</td></tr>
-        <tr><td>안정성</td><td>-</td><td>-</td></tr>
-        <tr><td>시장가치</td><td>-</td><td>-</td></tr>
-        <tr><td><b>종합</b></td><td>-</td><td>-</td></tr>
+        <tr><td>성장성</td><td class="score-col">-</td><td class="opinion-col">-</td></tr>
+        <tr><td>수익성</td><td class="score-col">-</td><td class="opinion-col">-</td></tr>
+        <tr><td>안정성</td><td class="score-col">-</td><td class="opinion-col">-</td></tr>
+        <tr><td>시장가치</td><td class="score-col">-</td><td class="opinion-col">-</td></tr>
+        <tr><td><b>종합</b></td><td class="score-col">-</td><td class="opinion-col">-</td></tr>
         <tr><td colspan="3" style="color:gray;">아직 재무 평가 정보가 없습니다.</td></tr>
       {% endif %}
       </tbody>
