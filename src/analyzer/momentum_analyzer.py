@@ -4,6 +4,10 @@ import os
 import numpy as np
 from datetime import datetime
 
+# 업종/테마별 모멘텀(가격/거래대금/RSI/주도주 등) 지표 일괄 계산 및 DB 저장 모듈
+# - 목적: 업종/테마별 기초 모멘텀/지표 계산 및 momentum_analysis 테이블 저장
+# - 사용법: MomentumAnalyzer 클래스 활용
+
 class MomentumAnalyzer:
     """
     테마/업종의 일별 데이터를 기반으로 모멘텀을 분석하고 모든 기초 지표를 생성하는 클래스.

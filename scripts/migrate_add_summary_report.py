@@ -1,3 +1,6 @@
+# financial_evaluation 테이블에 summary_report 컬럼 추가 마이그레이션 스크립트
+# - 목적: 재무 요약 텍스트 저장용 컬럼 추가 (이미 존재하면 무시)
+# - 사용법: python scripts/migrate_add_summary_report.py
 import sqlite3
 import os
 

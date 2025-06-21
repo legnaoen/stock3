@@ -14,6 +14,10 @@ if sys.prefix == sys.base_prefix:
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))
 
+# 업종/테마별 일일 성과 집계, 주도주 선정, DB 저장, 상세 분석 모듈
+# - 목적: 업종/테마별 성과 집계, 주도주 선정, DB 저장, 상세 분석 함수 제공
+# - 사용법: get_industry_performance, get_theme_performance 등 함수 활용
+
 def init_performance_tables():
     """성과 테이블 초기화"""
     with sqlite3.connect(THEME_INDUSTRY_DB) as conn:

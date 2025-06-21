@@ -1,3 +1,6 @@
+# 네이버 금융에서 종목별 재무정보/동일업종 PER 등 크롤링 및 DB 저장 모듈
+# - 목적: 종목별 재무정보, 동일업종 PER 등 크롤링 및 DB 저장
+# - 사용법: NaverFinancialCrawler 클래스 활용
 import os
 import sys
 import sqlite3

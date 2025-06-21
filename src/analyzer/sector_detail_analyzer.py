@@ -18,6 +18,10 @@ logger = setup_logger()
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))
 
+# 업종/테마별 상세 정보 및 소속 종목 리스트/상세 데이터 조회 모듈
+# - 목적: 업종/테마별 기본 정보, 소속 종목 리스트, 상세 데이터 조회 함수 제공
+# - 사용법: get_sector_info, get_sector_stocks 등 함수 활용
+
 def get_sector_info(sector_type: str, sector_id: int, date: str = None) -> Dict:
     """테마/업종 기본 정보 조회"""
     if not date:

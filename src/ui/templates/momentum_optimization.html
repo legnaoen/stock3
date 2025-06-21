@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+    <meta charset="UTF-8">
+    <title>모멘텀 최적화 결과</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-4">
+        <h2>모멘텀 최적화 리포트</h2>
+        <form method="post" action="/momentum-optimization/run" class="mb-3">
+            <button type="submit" class="btn btn-primary">최적화 테스트 실행</button>
+        </form>
+        {% if running %}
+        <div class="alert alert-info">최적화 테스트 실행 중입니다... 잠시만 기다려주세요.</div>
+        {% endif %}
+        <hr>
+        <!-- 0. 데이터 구간 -->
+        <h5>테스트 데이터 구간</h5>
+        <ul>
+            <li><b>기간/거래일수:</b> {{ meta['데이터 구간'] }}</li>
+        </ul>
+        <!-- 1. 실험 메타데이터 -->
+        <h5>실험 정보</h5>
+        <ul>
+            <li><b>실험일:</b> {{ meta['실험일'] }}</li>
+            <li><b>사용 지표:</b> {{ meta['사용 지표']|join(', ') }}</li>
+            <li><b>가중치 조합 수:</b> {{ meta['조합수'] }}</li>
+        </ul>
+        <!-- 2. 가중치 조합 비교 -->
+        <h5>가중치 조합 비교</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm">
+                <thead>
+                    <tr><th>지표</th><th>현재 가중치</th><th>추천 가중치</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in weight_compare %}
+                    <tr>
+                        <td>{{ row['지표'] }}</td>
+                        <td>{{ '%.2f'|format(row['현재']) }}</td>
+                        <td>{{ '%.2f'|format(row['추천']) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- 3. 성과(적중률/수익률) 비교 -->
+        <h5>적중률/수익률 개선 효과</h5>
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm">
+                <thead>
+                    <tr><th>구분</th><th>5일 BUY 적중률(%)</th><th>5일 BUY 평균수익률(%)</th></tr>
+                </thead>
+                <tbody>
+                    {% for row in perf_compare %}
+                    <tr>
+                        <td>{{ row['구분'] }}</td>
+                        <td>{{ '%.2f'|format(row['BUY_hit_rate_5d']) }}</td>
+                        <td>{{ '%.2f'|format(row['BUY_avg_return_5d']) }}</td>
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        <!-- 4. 최고 성과 조합/가중치 -->
+        <h5>최고 성과 조합</h5>
+        {% if best_row %}
+        <div class="card mb-3">
+            <div class="card-body">
+                <b>가중치 조합:</b>
+                <ul>
+                {% for k, v in best_row.items() if k not in ['BUY_hit_rate_5d','BUY_avg_return_5d'] %}
+                    <li>{{ k }}: {{ '%.2f'|format(v) }}</li>
+                {% endfor %}
+                </ul>
+                <b>5일 BUY 적중률:</b> {{ '%.2f'|format(best_row['BUY_hit_rate_5d']) }}%<br>
+                <b>5일 BUY 평균수익률:</b> {{ '%.2f'|format(best_row['BUY_avg_return_5d']) }}%
+            </div>
+        </div>
+        {% else %}
+        <p>최고 성과 조합 데이터가 없습니다.</p>
+        {% endif %}
+        <!-- 5. 상위 5개 조합 요약 -->
+        <h5>상위 5개 조합 요약</h5>
+        {% if top_rows %}
+        <div class="table-responsive">
+            <table class="table table-bordered table-sm">
+                <thead>
+                    <tr>
+                        {% for k in top_rows[0].keys() %}
+                        <th>{{ k }}</th>
+                        {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                    {% for row in top_rows %}
+                    <tr>
+                        {% for v in row.values() %}
+                        <td>{{ '%.2f'|format(v) if v is number else v }}</td>
+                        {% endfor %}
+                    </tr>
+                    {% endfor %}
+                </tbody>
+            </table>
+        </div>
+        {% else %}
+        <p>상위 조합 데이터가 없습니다.</p>
+        {% endif %}
+        <!-- 6. 전체 표(선택) -->
+        <details class="mt-3">
+            <summary>전체 결과 표 보기</summary>
+            <div class="table-responsive mt-2">
+                {{ table_html|safe }}
+            </div>
+        </details>
+        <a href="/" class="btn btn-secondary mt-3">메인으로 돌아가기</a>
+    </div>
+</body>
+</html> 

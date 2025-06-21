@@ -1,3 +1,6 @@
+# momentum_analysis 테이블에 leader_count, leader_momentum 컬럼 추가 마이그레이션 스크립트
+# - 목적: 리더 종목 관련 컬럼을 테이블에 추가 (이미 존재하면 무시)
+# - 사용법: python scripts/migrate_add_leader_momentum.py
 import sqlite3
 import os
 

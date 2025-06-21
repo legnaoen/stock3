@@ -1,6 +1,10 @@
 import sqlite3
 import os
 
+# financial_info 테이블에 industry_per 컬럼 추가 마이그레이션 스크립트
+# - 목적: 업종 PER 저장용 컬럼 추가 (이미 존재하면 무시)
+# - 사용법: python scripts/migrate_industry_per.py
+
 def migrate_industry_per():
     """Add industry_per column to financial_info table."""
     db_path = os.path.join(os.path.dirname(__file__), '../db/stock_master.db')

@@ -326,177 +326,60 @@ stock-analytics/
 
 ---
 
-# 업종/테마 등락률 계산 로직 변경 (2025-06-17)
+# [2025-06-21] 모멘텀/지수/투자의견 분석 자동화 파이프라인 통합
 
-## 변경 내용
-1. 업종/테마 등락률 계산 로직을 시가총액 가중평균 방식으로 변경
-   - 기존: 단순 평균 방식
-   - 변경: `SUM(price_change_ratio * market_cap) / SUM(market_cap)`
-   - 네이버 금융과 동일한 계산 방식 적용
+- **scripts/run_momentum_analysis.py** 생성 및 정상 실행 확인
+- 목적: 지수 데이터 수집→모멘텀 집계→투자의견 생성→성과/상관관계 분석까지 전체 파이프라인을 한 번에 자동 실행
+- 위치: scripts/ (실험/운영 자동화, 실전 서비스와 분리)
+- 사용법: 프로젝트 루트에서 `python scripts/run_momentum_analysis.py` 실행
+- 각 단계별로 누락 데이터 자동 보충, 에러 발생 시 다음 단계로 진행
+- 분석 결과는 results/ 폴더에 CSV로 저장, 로그로도 주요 성과/적중률/상관관계 출력
+- 실전 신호/전략의 효과 검증 및 품질 개선, 운영 자동화에 활용
 
-2. 코드 구조 개선
-   - `theme_industry_collector.py` 제거
-   - `sector_theme_analyzer.py`로 기능 통합
-   - 실시간 분석과 DB 저장 기능을 하나의 모듈로 통합
-   - `save_to_db` 파라미터로 DB 저장 여부 선택 가능
+## scripts/ 폴더 주요 스크립트 역할 요약 (2025-06-21 기준)
 
-3. 성과 데이터 저장 구조
-   - DB: `theme_industry.db`
-   - 테이블:
-     - `theme_daily_performance`: 테마별 일간 성과
-     - `industry_daily_performance`: 업종별 일간 성과
-   - 저장 정보:
-     - 시가총액 가중평균 등락률
-     - 거래량, 거래대금, 시가총액 합계
-     - 상승/하락/보합 종목 수
-     - 시가총액 상위 5종목(리더주)
-
-## 실행 순서
-1. `krx_collector.py` 실행: 최신 주가 데이터 수집
-2. `sector_theme_analyzer.py` 실행: 업종/테마별 등락률 계산 및 저장
-
-## 사용 예시
-```python
-# 실시간 조회만 할 경우
-results = get_industry_performance(date, save_to_db=False)
-
-# DB에 저장하면서 조회할 경우
-results = get_industry_performance(date, save_to_db=True)
-
-# 일간 성과 일괄 업데이트
-update_daily_performance(date)
-```
-
-## 참고사항
-- 업종/테마별 등락률은 시가총액 가중평균으로 계산
-- 업종/테마 내 종목들의 시가총액이 클수록 해당 종목의 등락률이 더 큰 영향을 미침
-- 네이버 금융 등 시장 표준과 동일한 계산 방식 사용
+| 파일명 | 역할/목적 |
+| ------ | ------------------------------------------------------------ |
+| run_momentum_analysis.py | 전체 파이프라인(지수→모멘텀→투자의견→백테스트) 자동 실행 |
+| collect_market_index.py | 시장지수(KOSPI/KOSDAQ) 데이터 수집 및 모멘텀 계산/DB 저장 |
+| backfill_daily_performance.py | 업종/테마 일별 성과 데이터 자동 보충 |
+| backfill_investment_opinion.py | 투자 의견(investment_opinion) 자동 생성/보충 |
+| backtest_momentum_strategy.py | 업종/테마/투자의견 모멘텀 전략 백테스트/성과 분석 |
+| fill_missing_market_cap.py | 시가총액(market_cap) 누락분 보충(pykrx 활용) |
+| migrate_add_leader_momentum.py | momentum_analysis 테이블에 leader 관련 컬럼 추가 |
+| migrate_add_rsi.py | momentum_analysis 테이블에 RSI 컬럼 추가 |
+| migrate_momentum_tables.py | SQL 스키마 파일을 DB에 일괄 적용(테이블 구조 마이그레이션) |
+| migrate_add_summary_report.py | financial_evaluation 테이블에 summary_report 컬럼 추가 |
+| migrate_industry_per.py | financial_info 테이블에 industry_per 컬럼 추가 |
+| db_check.py | DB 내 업종/테마 매핑 현황 점검 및 통계 출력 |
+| test_financial_crawler.py | (빈 파일) 재무 크롤러 테스트/임시 용도 |
+| manual_update.py | (빈 파일) 수동 업데이트/임시 용도 |
 
 ---
 
-## 변경 이력
+(이후 추가 확장/운영/이슈 발생 시 즉시 SSOT에 반영할 것)
 
-### 2025-06-17
-- 업종과 테마의 등락률 순위 정보 추가
-  - theme_daily_performance와 industry_daily_performance 테이블에 rank 컬럼 추가
-  - 등락률 기준으로 순위 자동 계산 및 저장 기능 구현
-  - 업종은 시가총액 가중평균 등락률 기준, 테마는 단순평균 등락률 기준으로 순위 산출
-  - sector_theme_analyzer.py의 get_industry_performance()와 get_theme_performance() 함수에 순위 계산 로직 추가
+## src/analyzer 폴더 주요 파일 역할 요약 (2025-06-21 기준)
 
-### 2024-03-21 테마 등락률 계산 방식 변경
-- 변경 내용: 테마 등락률 계산을 시가총액 가중평균에서 단순 평균으로 변경
-- 변경 이유: 네이버 테마 지수와의 정합성 개선
-- 영향 범위: 테마 등락률 계산 로직만 변경 (업종 등락률은 기존 방식 유지)
-- 관련 파일: src/analyzer/sector_theme_analyzer.py
-- 주요 변경사항:
-  * 테마 등락률을 단순 평균으로 계산하도록 변경
-  * 기존 시가총액 가중평균은 market_cap_weighted_ratio 컬럼으로 보존 (참고용)
-  * theme_daily_performance 테이블 스키마 수정
-  * 정렬 기준을 단순 평균 등락률로 변경
+| 파일명 | 역할/목적 |
+| ------ | ------------------------------------------------------------ |
+| market_index_analyzer.py | 시장지수(KOSPI/KOSDAQ 등) 일별 모멘텀(수익률) 계산 및 DB 저장 |
+| momentum_signal_generator.py | 업종/테마 모멘텀 신호(매수/매도/보유) 생성기 |
+| sector_theme_analyzer.py | 업종/테마별 일일 성과 집계, 주도주 선정, DB 저장, 상세 분석 |
+| investment_analyzer.py | 모멘텀/RSI 등 지표 기반 종합 투자 의견 자동 생성 |
+| momentum_analyzer.py | 업종/테마별 모멘텀(가격/거래대금/RSI/주도주 등) 지표 일괄 계산 및 DB 저장 |
+| sector_detail_analyzer.py | 업종/테마별 상세 정보 및 소속 종목 리스트/상세 데이터 조회 |
+| financial_statement_analyzer.py | 종목별 재무제표(성장성/수익성/안정성/시장가치) 자동 평가 및 투자 의견/리포트 생성 |
 
-### 2025-06-18
-- krx_collector.py에 과거 일별 시세 누락분을 pykrx로 보충하는 fill_missing_history() 기능 추가
-  - 목적: DailyStocks 등 마스터 DB에 60일 등 과거 시세 데이터가 부족할 때, pykrx로 누락분만 안전하게 보충
-  - 사용법: `python src/collector/krx_collector.py --backfill` (필요시 수동 실행)
-  - 기존 collector 메인 기능과 완전히 분리되어, 평소에는 영향 없음
-  - 이미 DB에 있는 날짜/종목 데이터는 건너뜀(중복 저장 방지)
-  - 신규 상장주 등 60일 미만 데이터는 존재하는 만큼만 저장
-  - pykrx 호출 실패/중단 시에도 기존 데이터는 유지됨
-  - SSOT 및 운영 문서에 사용법/목적/주의사항 명확히 기록
+## src/collector 폴더 주요 파일 역할 요약 (2025-06-21 기준)
 
----
-
-# 과거 시세 데이터 백필 및 파생지표 보충 기능 (2025-06-18)
-
-## 주요 내용
-- `src/collector/krx_collector.py`에 fill_missing_history() 함수 추가, `--backfill` 옵션으로 과거 60영업일(또는 지정 범위) 누락 일별 시세를 pykrx로 안전하게 보충
-- 신규 상장주 등 60일 미만 데이터는 존재하는 만큼만 저장, 이미 DB에 있는 데이터는 건너뜀(중복 저장/오염 방지)
-- 거래대금 컬럼명 이슈(예: '거래대금', '거래대금(백만)', '거래대금(원)', '거래대금(천원)' 등) 발생 시 다양한 컬럼명 체크 및 KeyError 예외처리로 실전 운영 안전성 확보
-- fill_missing_history()는 collector 메인 기능과 완전히 분리, 최초 1회 또는 누락 발생 시에만 수동 실행(일상적 자동화와 분리)
-- 파생지표(60일 저점, 5일 평균 거래대금) 산출 및 저점반등주 추출 파이프라인과 연동, 실전 데이터 품질 보장
-- pykrx 호출 실패/중단 시에도 기존 데이터는 유지, 부분 성공/실패 모두 로그로 남김
-
-## 사용법
-- 과거 시세 백필: `python src/collector/krx_collector.py --backfill`
-- (최초 1회 또는 누락 발생 시에만 실행, 평소 collector 자동화와 분리)
-- 실행 로그에서 "XX개 날짜 보충 완료" 등 정상 처리 여부 확인
-- 예외 발생 시 KeyError 등 상세 로그로 원인 파악 가능
-
-## 실전 운영 가이드/트러블슈팅
-- fill_missing_history() 실행 전후 DB(특히 DailyStocks, 파생지표 테이블) 데이터 정상 적재 여부 확인
-- 거래대금 컬럼명 이슈 발생 시 다양한 컬럼명 체크/예외처리 코드 유지 필요
-- 신규 상장주/거래정지주 등 특수 케이스는 존재하는 데이터만 저장, 누락/오류는 무시(운영 중단 방지)
-- pykrx API 장애/지연 시 부분 저장/재시도 가능, 기존 데이터 오염 없음
-- 파생지표(60일 저점, 5일 평균 거래대금) 및 저점반등주 추출 파이프라인과 연동하여 실전 데이터 품질 보장
-- 모든 변경/운영 이력은 SSOT.md 및 changelog.md에 즉시 기록
-
-## 연관 파이프라인/분석
-- fill_missing_history()로 보충된 데이터는 저점반등주, 파생지표, 업종/테마 분석 등 실전 자동화 파이프라인 전체에 즉시 반영됨
-- 실전 데이터 품질/운영 안전성/확장성 모두 강화
-
----
-
-## 5. 모멘텀 분석 시스템 (2025-06-20 추가)
-
-### 5.1 주요 기능 및 역할
-- **목적**: `invest_report.md`에 따라 업종/테마의 모멘텀을 분석하고, 투자 판단에 필요한 객관적인 지표를 생성.
-- **주요 기능**:
-    - 일별 가격 모멘텀(1, 3, 5, 10일 수익률) 계산.
-    - 일별 거래대금 모멘텀(1, 3, 5일 증감률) 계산.
-    - 분석 결과를 `momentum_analysis` 테이블에 저장 및 자동 갱신.
-- **기대 효과**: 데이터 기반의 강세/약세 업종 및 테마 필터링, 투자 전략 수립 지원.
-
-### 5.2 관련 파일 및 DB 위치
-- **핵심 분석 스크립트**: `src/analyzer/momentum_analyzer.py`
-- **신규 테이블 스키마**: `db/schema_momentum.sql`
-- **DB 마이그레이션 스크립트**: `scripts/migrate_momentum_tables.py`
-- **핵심 데이터베이스**: `theme_industry.db`
-    - **분석 대상 테이블**: `theme_daily_performance`, `industry_daily_performance`
-    - **결과 저장 테이블**: `momentum_analysis`
-
-### 5.3 개발 중 발생한 문제 및 해결 과정 (Trial & Error)
-
-1.  **문제: 데이터 위치 혼동**
-    - **원인**: 초기에는 분석 대상 데이터(`theme_daily_performance`)가 `stock_master.db`에 있는 것으로 착각하여 접근했으나, 실제 데이터는 `theme_industry.db`에 존재했음.
-    - **해결**: 개발 착수 전, `sqlite3` CLI를 통해 각 DB의 테이블 목록과 샘플 데이터를 직접 조회하여 데이터의 정확한 위치를 명확히 파악함. **모든 관련 작업은 `theme_industry.db` 하나로 통일.**
-
-2.  **문제: DB 스키마 불일치 (`AttributeError: no such column`)**
-    - **원인**: 분석 코드에서 '테마'와 '업종' ID를 `target_id`라는 공통 컬럼명으로 조회했으나, 실제 테이블에는 각각 `theme_id`, `industry_id`로 저장되어 있었음.
-    - **해결**: `target_type` 파라미터에 따라 `theme_id` 또는 `industry_id`를 동적으로 사용하도록 쿼리를 수정함. 조회 후에는 Pandas DataFrame 내에서 컬럼명을 `target_id`로 일관성 있게 통일하여 후속 분석 로직의 편의성을 높임.
-
-3.  **문제: DB 저장 시 데이터 깨짐 (Binary Data Corruption)**
-    - **원인**: Pandas DataFrame을 `executemany`로 저장하는 과정에서, NumPy의 숫자 타입(`numpy.int64` 등)이 SQLite가 인식하지 못하는 바이너리(BLOB) 형태로 변환되어 저장됨.
-    - **1차 해결 시도 (실패)**: `astype()`으로 파이썬 네이티브 타입 변환을 시도했으나, `NaN` 값 등이 섞여있어 처리가 복잡하고 실패함.
-    - **최종 해결**: **'선 삭제, 후 추가 (DELETE then INSERT)'** 전략으로 변경. Pandas의 내장 `to_sql()` 메서드는 데이터 타입 처리가 우수하므로 이를 활용.
-        1. 새로 분석한 데이터에 해당하는 날짜의 기존 레코드를 `DELETE` 쿼리로 모두 삭제.
-        2. `to_sql(if_exists='append')`를 사용하여 깨끗한 상태에서 새 데이터를 추가. 이 방식이 훨씬 안정적이고 간결함을 확인함.
-
-### 5.4 시스템 활용법
-
-1.  **분석기 실행**:
-    - 터미널에서 프로젝트 루트 디렉토리로 이동 후, 아래 명령어를 실행하면 최근 60일치 데이터를 분석하여 DB에 저장합니다.
-    ```bash
-    python -m src.analyzer.momentum_analyzer
-    ```
-
-2.  **분석 결과 조회 (예시)**:
-    - DB에 저장된 데이터를 활용하여 현재 가장 강력한 모멘텀을 보이는 테마/업종을 조회할 수 있습니다.
-    - **예시: 1일 기준 가장 강한 테마 Top 5 조회**
-    ```sql
-    -- sqlite3 db/theme_industry.db
-    SELECT
-        m.target_id,
-        tm.theme_name,
-        m.price_momentum_1d,
-        m.volume_momentum_1d
-    FROM momentum_analysis m
-    JOIN stock_master.theme_master tm ON m.target_id = tm.theme_id -- 다른 DB 테이블과 JOIN
-    WHERE m.target_type = 'THEME'
-      AND m.date = (SELECT MAX(date) FROM momentum_analysis)
-      AND m.price_momentum_1d > 0
-      AND m.volume_momentum_1d > 0
-    ORDER BY m.price_momentum_1d DESC
-    LIMIT 5;
-    ```
+| 파일명 | 역할/목적 |
+| ------ | ------------------------------------------------------------ |
+| market_index_collector.py | KOSPI/KOSDAQ 등 주요 지수의 일별 시세(OHLCV) 데이터 수집 |
+| krx_collector.py | KRX(한국거래소) API 기반 전체 종목/일별 시세/시가총액/누락 데이터 자동 보충 |
+| naver_financial_crawler.py | 네이버 금융에서 종목별 재무정보/동일업종 PER 등 크롤링 및 DB 저장 |
+| theme_crawler.py | 네이버 금융 테마별 리스트/소속 종목 크롤링 및 DB 저장 |
+| news_crawler.py | 네이버 뉴스에서 종목/키워드별 최신 뉴스 기사 크롤링 및 DB 저장 |
+| industry_crawler.py | 네이버 금융 업종별 리스트/소속 종목 크롤링 및 DB 저장 |
 
 ---

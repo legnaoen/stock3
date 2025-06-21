@@ -1,0 +1,111 @@
+
+[CSV 저장 완료] results/backtest_momentum_results.csv
+
+[신호별 기간별 평균 수익률/적중률 요약]
+  신호  count  1d_평균수익  1d_적중률  3d_평균수익  3d_적중률  5d_평균수익  5d_적중률  10d_평균수익 10d_적중률
+ BUY   3154     1.95  80.25%     5.41  94.42%     8.51  96.64%     13.25  93.63%
+SELL      2    -7.61 100.00%   -14.97 100.00%   -19.24 100.00%    -17.62 100.00%
+HOLD  15500     0.14  54.70%     0.46  57.26%     0.78  57.43%      2.21  55.70%
+[DEBUG] 조인 후 전체 row 수: 9328
+[DEBUG] 조인 후 BUY 신호 row 수: 6
+[DEBUG] price_momentum_1d NaN 비율: 0.00%
+[DEBUG] momentum_1d NaN 비율: 2.27%
+[DEBUG] 날짜 분포: 2025-04-15 ~ 2025-06-20
+[DEBUG] 샘플 데이터 (상위 5개):
+   target_id target_type        date  ... momentum_5d  momentum_10d  momentum_20d
+0          8       THEME  2025-04-15  ...         NaN           NaN           NaN
+1          9       THEME  2025-04-15  ...         NaN           NaN           NaN
+2         12       THEME  2025-04-15  ...         NaN           NaN           NaN
+3         14       THEME  2025-04-15  ...         NaN           NaN           NaN
+4         17       THEME  2025-04-15  ...         NaN           NaN           NaN
+
+[5 rows x 14 columns]
+
+
+[실제 투자 의견 기준 신호별 기간별 평균 수익률/적중률 요약]
+        신호  count  1d_평균수익  1d_적중률  3d_평균수익  3d_적중률  5d_평균수익 5d_적중률  10d_평균수익 10d_적중률 20d_평균수익 20d_적중률
+STRONG_BUY    224     0.12  47.32%    -0.02  44.20%     1.80 60.71%      8.79  92.86%        -   0.00%
+       BUY      6     2.47 100.00%     2.55 100.00%     2.31 66.67%      9.64 100.00%        -   0.00%
+      HOLD     36     2.63  94.44%     4.28  91.67%     3.47 72.22%     12.13  94.44%        -   0.00%
+      SELL   9062     0.44  40.61%     1.34  31.38%     2.17 26.47%      4.20  17.72%     6.95   8.89%
+
+[CSV 저장 완료] results/backtest_opinion_results.csv
+
+[매수 신호 수익률 적중률 & 시장 모멘텀 상관관계 분석표]
+기간         시장↑ 적중률     시장↓ 적중률        상관계수
+
+[매수 신호 수익률 적중률 & 시장 모멘텀 상관관계 분석표]
+기간         시장↑ 적중률     시장↓ 적중률        상관계수
+1일         48.70%         nan%       0.442 ★
+3일         45.65%         nan%       0.387  
+5일         60.87%         nan%      -0.044  
+10일        93.04% ★       nan%       0.113  
+20일          nan%         nan%         nan  
+
+[전략 참고] 시장 모멘텀이 양수일 때만 매수 시 전체 적중률: (데이터 없음)
+[INFO] 총 56개 가중치 조합 생성
+[1/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 1.0} → 5d BUY hit=65.44%, avg_ret=2.16
+[2/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.2, 'rsi_value': 0.8} → 5d BUY hit=65.44%, avg_ret=2.16
+[3/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.4, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.46%, avg_ret=2.16
+[4/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.4} → 5d BUY hit=65.61%, avg_ret=2.18
+[5/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.8, 'rsi_value': 0.2} → 5d BUY hit=75.71%, avg_ret=3.24
+[6/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 1.0, 'rsi_value': 0.0} → 5d BUY hit=95.16%, avg_ret=8.06
+[7/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.0, 'rsi_value': 0.8} → 5d BUY hit=65.44%, avg_ret=2.16
+[8/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.2, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.46%, avg_ret=2.16
+[9/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.4, 'rsi_value': 0.4} → 5d BUY hit=65.59%, avg_ret=2.18
+[10/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.2} → 5d BUY hit=78.35%, avg_ret=3.43
+[11/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.8, 'rsi_value': 0.0} → 5d BUY hit=97.35%, avg_ret=9.27
+[12/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.0, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.47%, avg_ret=2.16
+[13/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.2, 'rsi_value': 0.4} → 5d BUY hit=65.57%, avg_ret=2.17
+[14/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.4, 'rsi_value': 0.2} → 5d BUY hit=81.30%, avg_ret=3.63
+[15/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.0} → 5d BUY hit=98.87%, avg_ret=10.84
+[16/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.0, 'rsi_value': 0.4} → 5d BUY hit=65.61%, avg_ret=2.18
+[17/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.2, 'rsi_value': 0.2} → 5d BUY hit=84.95%, avg_ret=3.87
+[18/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.4, 'rsi_value': 0.0} → 5d BUY hit=99.46%, avg_ret=12.43
+[19/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.8, 'price_momentum_10d': 0.0, 'rsi_value': 0.2} → 5d BUY hit=88.17%, avg_ret=4.13
+[20/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 0.8, 'price_momentum_10d': 0.2, 'rsi_value': 0.0} → 5d BUY hit=100.00%, avg_ret=14.12
+[21/56] weights={'price_momentum_3d': 0.0, 'price_momentum_5d': 1.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=100.00%, avg_ret=15.07
+[22/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.8} → 5d BUY hit=65.45%, avg_ret=2.16
+[23/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.2, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.46%, avg_ret=2.16
+[24/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.4, 'rsi_value': 0.4} → 5d BUY hit=65.57%, avg_ret=2.17
+[25/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.2} → 5d BUY hit=77.09%, avg_ret=3.37
+[26/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.8, 'rsi_value': 0.0} → 5d BUY hit=96.94%, avg_ret=9.43
+[27/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.0, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.46%, avg_ret=2.16
+[28/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.2, 'rsi_value': 0.4} → 5d BUY hit=65.56%, avg_ret=2.17
+[29/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.4, 'rsi_value': 0.2} → 5d BUY hit=80.16%, avg_ret=3.58
+[30/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.0} → 5d BUY hit=98.74%, avg_ret=11.08
+[31/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.0, 'rsi_value': 0.4} → 5d BUY hit=65.58%, avg_ret=2.17
+[32/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.2, 'rsi_value': 0.2} → 5d BUY hit=83.82%, avg_ret=3.86
+[33/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.4, 'rsi_value': 0.0} → 5d BUY hit=99.38%, avg_ret=12.86
+[34/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.0, 'rsi_value': 0.2} → 5d BUY hit=86.94%, avg_ret=4.14
+[35/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.2, 'rsi_value': 0.0} → 5d BUY hit=100.00%, avg_ret=14.89
+[36/56] weights={'price_momentum_3d': 0.2, 'price_momentum_5d': 0.8, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=100.00%, avg_ret=16.08
+[37/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.6000000000000001} → 5d BUY hit=65.46%, avg_ret=2.16
+[38/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.2, 'rsi_value': 0.4} → 5d BUY hit=65.52%, avg_ret=2.17
+[39/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.4, 'rsi_value': 0.2} → 5d BUY hit=78.76%, avg_ret=3.53
+[40/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.6000000000000001, 'rsi_value': 0.0} → 5d BUY hit=97.85%, avg_ret=11.22
+[41/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.0, 'rsi_value': 0.4} → 5d BUY hit=65.54%, avg_ret=2.17
+[42/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.2, 'rsi_value': 0.2} → 5d BUY hit=82.04%, avg_ret=3.82
+[43/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.4, 'rsi_value': 0.0} → 5d BUY hit=99.02%, avg_ret=13.45
+[44/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.0, 'rsi_value': 0.2} → 5d BUY hit=85.28%, avg_ret=4.15
+[45/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.2, 'rsi_value': 0.0} → 5d BUY hit=99.37%, avg_ret=15.40
+[46/56] weights={'price_momentum_3d': 0.4, 'price_momentum_5d': 0.6000000000000001, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=99.60%, avg_ret=16.94
+[47/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.4} → 5d BUY hit=65.54%, avg_ret=2.17
+[48/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.2, 'rsi_value': 0.2} → 5d BUY hit=80.08%, avg_ret=3.75
+[49/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.4, 'rsi_value': 0.0} → 5d BUY hit=98.33%, avg_ret=13.71
+[50/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.0, 'rsi_value': 0.2} → 5d BUY hit=82.98%, avg_ret=4.07
+[51/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.2, 'rsi_value': 0.0} → 5d BUY hit=98.88%, avg_ret=15.89
+[52/56] weights={'price_momentum_3d': 0.6000000000000001, 'price_momentum_5d': 0.4, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=99.05%, avg_ret=17.35
+[53/56] weights={'price_momentum_3d': 0.8, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.2} → 5d BUY hit=79.99%, avg_ret=3.92
+[54/56] weights={'price_momentum_3d': 0.8, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.2, 'rsi_value': 0.0} → 5d BUY hit=98.62%, avg_ret=16.17
+[55/56] weights={'price_momentum_3d': 0.8, 'price_momentum_5d': 0.2, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=98.87%, avg_ret=17.55
+[56/56] weights={'price_momentum_3d': 1.0, 'price_momentum_5d': 0.0, 'price_momentum_10d': 0.0, 'rsi_value': 0.0} → 5d BUY hit=97.47%, avg_ret=17.38
+[CSV 저장 완료] results/optimized_momentum_weights.csv
+
+[최고 5개 가중치 조합: 5일 BUY 적중률 기준]
+ price_momentum_3d  price_momentum_5d  price_momentum_10d  rsi_value  BUY_hit_rate_5d  BUY_avg_return_5d
+               0.0                0.8                 0.2        0.0       100.000000          14.119018
+               0.0                1.0                 0.0        0.0       100.000000          15.068737
+               0.2                0.6                 0.2        0.0       100.000000          14.886985
+               0.2                0.8                 0.0        0.0       100.000000          16.080874
+               0.4                0.6                 0.0        0.0        99.601594          16.941929

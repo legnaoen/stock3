@@ -19,6 +19,9 @@ PROJECT_ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), '..'))
 DB_PATH = os.path.join(PROJECT_ROOT, 'db', 'stock_master.db')
 THEME_INDUSTRY_DB = os.path.join(PROJECT_ROOT, 'db', 'theme_industry.db')
 
+# 업종/테마 일별 성과 데이터 자동 보충 스크립트
+# - 목적: DailyStocks 기준으로 업종/테마별 일일 성과 데이터를 자동으로 계산/DB에 보충
+# - 사용법: python scripts/backfill_daily_performance.py [--start YYYY-MM-DD --end YYYY-MM-DD]
 
 def get_existing_dates(target_type: str) -> set:
     """DB에 이미 존재하는 데이터의 날짜를 집합 형태로 반환"""

@@ -12,6 +12,10 @@ if sys.prefix == sys.base_prefix:
     print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
     sys.exit(1)
 
+# 모멘텀/RSI 등 지표 기반 종합 투자 의견(STRONG_BUY/BUY/HOLD/SELL) 자동 생성 모듈
+# - 목적: momentum_analysis의 기초 지표를 바탕으로 종합 추세 점수 및 투자 의견 생성/DB 저장
+# - 사용법: InvestmentAnalyzer 클래스 활용
+
 class InvestmentAnalyzer:
     """
     기초 분석 데이터(모멘텀, RSI 등)를 바탕으로 종합적인 투자 의견을 생성하는 클래스.

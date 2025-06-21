@@ -10,6 +10,10 @@ from selenium.webdriver.support import expected_conditions as EC
 
 DB_PATH = 'db/stock_master.db'
 
+# 네이버 뉴스에서 종목/키워드별 최신 뉴스 기사 크롤링 및 DB 저장 모듈
+# - 목적: 종목/키워드별 최신 뉴스 기사 크롤링 및 DB 저장
+# - 사용법: NaverNewsCrawler 클래스, crawl_naver_news_for_stock 함수 활용
+
 class NaverNewsCrawler:
     def __init__(self, headless=True):
         chrome_options = Options()

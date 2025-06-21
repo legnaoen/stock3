@@ -1,3 +1,6 @@
+# 네이버 금융 테마별 리스트/소속 종목 크롤링 및 DB 저장 모듈
+# - 목적: 테마별 리스트 및 소속 종목 크롤링, DB 저장
+# - 사용법: get_theme_list, get_stocks_by_theme, upsert_themes 등 함수 활용
 import os
 import sys
 import time

@@ -1,3 +1,6 @@
+# 종목별 재무제표(성장성/수익성/안정성/시장가치) 자동 평가 및 투자 의견/리포트 생성 모듈
+# - 목적: 재무제표 기반 종목 평가, 투자 의견/리포트 자동 생성 및 DB 저장
+# - 사용법: FinancialStatementAnalyzer 클래스 활용
 import sqlite3
 from typing import Dict, List, Tuple, Optional
 import json

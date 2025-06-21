@@ -1,7 +1,7 @@
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
-from flask import Flask, jsonify, render_template, request
+from flask import Flask, jsonify, render_template, request, redirect, url_for, flash
 import sqlite3
 from datetime import datetime, timedelta
 import threading
@@ -11,6 +11,9 @@ from src.api.sector_api import sector_api
 from src.collector.news_crawler import crawl_naver_news_for_stock
 from src.collector.naver_financial_crawler import NaverFinancialCrawler
 from src.analyzer.financial_statement_analyzer import FinancialStatementAnalyzer
+import pandas as pd
+import numpy as np
+import subprocess
 
 app = Flask(__name__)
 app.register_blueprint(sector_api)
@@ -85,12 +88,17 @@ def get_mixed_performance():
                        AND d2.date = ?
                        AND d2.price_change_ratio = 0
                    ) as unchanged_stocks,
-                   i.market_cap,
                    i.trading_value,
-                   i.leader_stock_codes
+                   i.leader_stock_codes,
+                   ma.trend_score,
+                   io.opinion_type
             FROM industry_daily_performance i
             JOIN (SELECT industry_id, industry_name FROM master.industry_master) m 
                  ON i.industry_id = m.industry_id
+            LEFT JOIN momentum_analysis ma 
+                 ON i.industry_id = ma.target_id AND i.date = ma.date AND ma.target_type = 'INDUSTRY'
+            LEFT JOIN investment_opinion io
+                 ON i.industry_id = io.target_id AND i.date = io.date AND io.target_type = 'INDUSTRY'
             WHERE i.date = ?
             
             UNION ALL
@@ -123,12 +131,17 @@ def get_mixed_performance():
                        AND d2.date = ?
                        AND d2.price_change_ratio = 0
                    ) as unchanged_stocks,
-                   t.market_cap,
                    t.trading_value,
-                   t.leader_stock_codes
+                   t.leader_stock_codes,
+                   ma.trend_score,
+                   io.opinion_type
             FROM theme_daily_performance t
             JOIN (SELECT theme_id, theme_name FROM master.theme_master) m 
                  ON t.theme_id = m.theme_id
+            LEFT JOIN momentum_analysis ma 
+                 ON t.theme_id = ma.target_id AND t.date = ma.date AND ma.target_type = 'THEME'
+            LEFT JOIN investment_opinion io
+                 ON t.theme_id = io.target_id AND t.date = io.date AND io.target_type = 'THEME'
             WHERE t.date = ?
         )
         SELECT *
@@ -139,8 +152,22 @@ def get_mixed_performance():
         
         cursor.execute(query, (date, date, date, date, date, date, date, date))
         
+        rows = cursor.fetchall()
+        all_leader_codes = set()
+        for row in rows:
+            codes = row[8].split(',') if row[8] else []
+            all_leader_codes.update(codes)
+        stock_name_map = {}
+        if all_leader_codes:
+            placeholders = ','.join(['?'] * len(all_leader_codes))
+            stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
+            cursor.execute(stock_query, list(all_leader_codes))
+            stock_name_map = dict(cursor.fetchall())
         results = []
-        for row in cursor.fetchall():
+        for row in rows:
+            print('[MIXED API ROW]', row)  # 진단용 로그 추가
+            codes = row[8].split(',') if row[8] else []
+            leader_names = [stock_name_map.get(code, code) for code in codes]
             results.append({
                 'type': row[0],
                 'id': row[1],
@@ -149,9 +176,10 @@ def get_mixed_performance():
                 'up_stocks': row[4],
                 'down_stocks': row[5],
                 'unchanged_stocks': row[6],
-                'market_cap': row[7],
-                'trading_value': row[8],
-                'leader_stocks': row[9].split(',') if row[9] else []
+                'trading_value': row[7],
+                'leader_stocks': leader_names,
+                'trend_score': row[9],
+                'opinion': row[10]
             })
         
         cursor.execute("DETACH DATABASE master")
@@ -212,11 +240,14 @@ def get_industry_performance():
                        AND d2.date = ? 
                        AND d2.price_change_ratio = 0
                    ) as unchanged_stocks,
-                   i.market_cap,
                    i.trading_value,
-                   i.leader_stock_codes
+                   i.leader_stock_codes,
+                   ma.trend_score,
+                   io.opinion_type
             FROM industry_daily_performance i
             JOIN master.industry_master m ON i.industry_id = m.industry_id
+            LEFT JOIN momentum_analysis ma ON i.industry_id = ma.target_id AND i.date = ma.date AND ma.target_type = 'INDUSTRY'
+            LEFT JOIN investment_opinion io ON i.industry_id = io.target_id AND i.date = io.date AND io.target_type = 'INDUSTRY'
             WHERE i.date = ?
         ),
         yesterday AS (
@@ -232,9 +263,10 @@ def get_industry_performance():
             t.up_stocks,
             t.down_stocks,
             t.unchanged_stocks,
-            t.market_cap,
             t.trading_value,
             t.leader_stock_codes,
+            t.trend_score,
+            t.opinion_type,
             t.rank as current_rank,
             y.rank as prev_rank
         FROM today t
@@ -244,10 +276,23 @@ def get_industry_performance():
         
         cursor.execute(query, (latest_daily_stock_date, latest_daily_stock_date, latest_daily_stock_date, latest_date, yesterday))
         
+        rows = cursor.fetchall()
+        all_leader_codes = set()
+        for row in rows:
+            codes = row[8].split(',') if row[8] else []
+            all_leader_codes.update(codes)
+        stock_name_map = {}
+        if all_leader_codes:
+            placeholders = ','.join(['?'] * len(all_leader_codes))
+            stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
+            cursor.execute(stock_query, list(all_leader_codes))
+            stock_name_map = dict(cursor.fetchall())
         results = []
-        for row in cursor.fetchall():
-            current_rank = row[10]
-            prev_rank = row[11]
+        for row in rows:
+            codes = row[8].split(',') if row[8] else []
+            leader_names = [stock_name_map.get(code, code) for code in codes]
+            current_rank = row[11]
+            prev_rank = row[12]
             rank_change = None if prev_rank is None else prev_rank - current_rank
             
             results.append({
@@ -258,9 +303,10 @@ def get_industry_performance():
                 'up_stocks': row[4],
                 'down_stocks': row[5],
                 'unchanged_stocks': row[6],
-                'market_cap': row[7],
-                'trading_value': row[8],
-                'leader_stocks': row[9].split(',') if row[9] else [],
+                'trading_value': row[7],
+                'leader_stocks': leader_names,
+                'trend_score': row[9],
+                'opinion': row[10],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
@@ -327,11 +373,14 @@ def get_theme_performance():
                        AND d2.date = ?
                        AND d2.price_change_ratio = 0
                    ) as unchanged_stocks,
-                   t.market_cap,
                    t.trading_value,
-                   t.leader_stock_codes
+                   t.leader_stock_codes,
+                   ma.trend_score,
+                   io.opinion_type
             FROM theme_daily_performance t
             JOIN master.theme_master m ON t.theme_id = m.theme_id
+            LEFT JOIN momentum_analysis ma ON t.theme_id = ma.target_id AND t.date = ma.date AND ma.target_type = 'THEME'
+            LEFT JOIN investment_opinion io ON t.theme_id = io.target_id AND t.date = io.date AND io.target_type = 'THEME'
             WHERE t.date = ?
         ),
         yesterday AS (
@@ -347,9 +396,10 @@ def get_theme_performance():
             t.up_stocks,
             t.down_stocks,
             t.unchanged_stocks,
-            t.market_cap,
             t.trading_value,
             t.leader_stock_codes,
+            t.trend_score,
+            t.opinion_type,
             t.rank as current_rank,
             y.rank as prev_rank
         FROM today t
@@ -359,23 +409,37 @@ def get_theme_performance():
         
         cursor.execute(query, (latest_daily_stock_date, latest_daily_stock_date, latest_daily_stock_date, latest_date, yesterday))
         
+        rows = cursor.fetchall()
+        all_leader_codes = set()
+        for row in rows:
+            codes = row[8].split(',') if row[8] else []
+            all_leader_codes.update(codes)
+        stock_name_map = {}
+        if all_leader_codes:
+            placeholders = ','.join(['?'] * len(all_leader_codes))
+            stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
+            cursor.execute(stock_query, list(all_leader_codes))
+            stock_name_map = dict(cursor.fetchall())
         results = []
-        for row in cursor.fetchall():
-            current_rank = row[10]
-            prev_rank = row[11]
+        for row in rows:
+            codes = row[8].split(',') if row[8] else []
+            leader_names = [stock_name_map.get(code, code) for code in codes]
+            current_rank = row[11]
+            prev_rank = row[12]
             rank_change = None if prev_rank is None else prev_rank - current_rank
             
             results.append({
-                'type': row[0],
+                'type': 'theme',
                 'id': row[1],
                 'name': row[2],
                 'change_rate': row[3],
                 'up_stocks': row[4],
                 'down_stocks': row[5],
                 'unchanged_stocks': row[6],
-                'market_cap': row[7],
-                'trading_value': row[8],
-                'leader_stocks': row[9].split(',') if row[9] else [],
+                'trading_value': row[7],
+                'leader_stocks': leader_names,
+                'trend_score': row[9],
+                'opinion': row[10],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
@@ -997,70 +1061,278 @@ def get_recommendations():
 
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
         
-        # 2. 추천 대상 데이터 조회 (업종/테마 결합)
+        # 업종과 테마를 모두 포함하여 조회하도록 쿼리 수정 (UNION ALL 사용)
         query = """
             WITH recommendations AS (
-                SELECT io.date, io.target_id, io.target_type, io.opinion_type, ma.trend_score
-                FROM investment_opinion io
-                JOIN momentum_analysis ma ON io.target_id = ma.target_id AND io.target_type = ma.target_type AND io.date = ma.date
-                WHERE io.date = ? AND io.opinion_type IN ('STRONG_BUY', 'BUY')
-            ),
-            combined_data AS (
-                SELECT 'theme' as type, r.target_id as id, m.theme_name as name, r.opinion_type, r.trend_score,
-                       p.price_change_ratio, p.trading_value, p.leader_stock_codes
-                FROM recommendations r
-                JOIN master.theme_master m ON r.target_id = m.theme_id
-                JOIN theme_daily_performance p ON r.target_id = p.theme_id AND r.date = p.date
-                WHERE r.target_type = 'THEME'
+                -- 테마 추천 목록
+                SELECT
+                    ma.target_id as item_code,
+                    tm.theme_name as item_name,
+                    ma.target_type as type,
+                    ma.trend_score,
+                    (ma.price_momentum_1d + ma.price_momentum_3d + ma.price_momentum_5d) as price_momentum,
+                    (ma.volume_momentum_1d + ma.volume_momentum_3d + ma.volume_momentum_5d) as volume_momentum,
+                    ma.leader_momentum as leader_score,
+                    ma.rsi_value as rsi_score,
+                    tdp.leader_stock_codes,
+                    tdp.trading_value,
+                    io.opinion_type
+                FROM
+                    momentum_analysis ma
+                JOIN
+                    theme_daily_performance tdp ON ma.target_id = tdp.theme_id AND ma.date = tdp.date
+                JOIN
+                    master.theme_master tm ON ma.target_id = tm.theme_id
+                LEFT JOIN investment_opinion io
+                     ON ma.target_id = io.target_id AND ma.date = io.date AND io.target_type = 'THEME'
+                WHERE
+                    ma.target_type = 'THEME' AND ma.date = ?
+
                 UNION ALL
-                SELECT 'industry' as type, r.target_id as id, m.industry_name as name, r.opinion_type, r.trend_score,
-                       p.price_change_ratio, p.trading_value, p.leader_stock_codes
-                FROM recommendations r
-                JOIN master.industry_master m ON r.target_id = m.industry_id
-                JOIN industry_daily_performance p ON r.target_id = p.industry_id AND r.date = p.date
-                WHERE r.target_type = 'INDUSTRY'
+
+                -- 업종 추천 목록
+                SELECT
+                    ma.target_id as item_code,
+                    im.industry_name as item_name,
+                    ma.target_type as type,
+                    ma.trend_score,
+                    (ma.price_momentum_1d + ma.price_momentum_3d + ma.price_momentum_5d) as price_momentum,
+                    (ma.volume_momentum_1d + ma.volume_momentum_3d + ma.volume_momentum_5d) as volume_momentum,
+                    ma.leader_momentum as leader_score,
+                    ma.rsi_value as rsi_score,
+                    idp.leader_stock_codes,
+                    idp.trading_value,
+                    io.opinion_type
+                FROM
+                    momentum_analysis ma
+                JOIN
+                    industry_daily_performance idp ON ma.target_id = idp.industry_id AND ma.date = idp.date
+                JOIN
+                    master.industry_master im ON ma.target_id = im.industry_id
+                LEFT JOIN investment_opinion io
+                     ON ma.target_id = io.target_id AND ma.date = io.date AND io.target_type = 'INDUSTRY'
+                WHERE
+                    ma.target_type = 'INDUSTRY' AND ma.date = ?
             )
-            SELECT * FROM combined_data ORDER BY trend_score DESC LIMIT ?
+            SELECT * FROM recommendations
+            ORDER BY trend_score DESC
+            LIMIT 20;
         """
-        
-        cursor.execute(query, (date, limit))
+        cursor.execute(query, (date, date))
         rows = cursor.fetchall()
-        
-        # 3. 주도주 코드 리스트 수집
+
+        # 주도주 코드 리스트 수집
         all_leader_codes = set()
         for row in rows:
-            codes = row[7] # leader_stock_codes
+            codes = row[8] # leader_stock_codes
             if codes:
                 all_leader_codes.update(codes.split(','))
-        
-        # 4. 주도주 코드 -> 이름 변환 맵 생성
+
+        # 주도주 코드 -> 이름 변환 맵 생성
         stock_name_map = {}
         if all_leader_codes:
             placeholders = ','.join(['?'] * len(all_leader_codes))
             stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
             cursor.execute(stock_query, list(all_leader_codes))
             stock_name_map = dict(cursor.fetchall())
-            
-        # 5. 최종 결과 데이터 조립
+
+        # 최종 결과 데이터 조립
         results = []
         for row in rows:
-            leader_codes = row[7].split(',') if row[7] else []
-            leader_stocks = [{'code': code, 'name': stock_name_map.get(code, code)} for code in leader_codes]
-            
+            print('[MIXED API ROW]', row)  # 진단용 로그 추가
+            codes = row[8].split(',') if row[8] else []
+            leader_names = [{'code': code, 'name': stock_name_map.get(code, code)} for code in codes]
             results.append({
-                'type': row[0],
-                'id': row[1],
-                'name': row[2],
-                'opinion': row[3],
-                'score': row[4],
-                'change_rate': row[5],
-                'trading_value': row[6],
-                'leader_stocks': leader_stocks
+                'item_code': row[0],
+                'item_name': row[1],
+                'type': row[2],
+                'trend_score': row[3],
+                'price_momentum': row[4],
+                'volume_momentum': row[5],
+                'leader_score': row[6],
+                'rsi_score': row[7],
+                'leader_stocks': leader_names,
+                'trading_value': row[8],
+                'opinion': row[9]
             })
-            
+
         cursor.execute("DETACH DATABASE master")
 
     return jsonify({'date': date, 'data': results})
+
+# [추가] 주도주 코드→이름 변환 함수
+
+def map_leader_codes_to_names(leader_codes_list, cursor):
+    """
+    leader_codes_list: [['005930','000660'], ...] 또는 ['005930','000660'] 등 다양한 입력 지원
+    cursor: DB 커서
+    return: {code: name, ...} dict
+    """
+    all_codes = set()
+    for codes in leader_codes_list:
+        if isinstance(codes, str):
+            all_codes.update(codes.split(','))
+        elif isinstance(codes, list):
+            all_codes.update(codes)
+    if not all_codes:
+        return {}
+    placeholders = ','.join(['?'] * len(all_codes))
+    stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
+    cursor.execute(stock_query, list(all_codes))
+    return dict(cursor.fetchall())
+
+@app.route('/industry/<int:industry_id>/momentum-analysis')
+def industry_momentum_analysis(industry_id):
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        df_op = pd.read_sql_query("""
+            SELECT date, opinion_type FROM investment_opinion
+            WHERE target_id = ? AND target_type = 'INDUSTRY'
+            ORDER BY date DESC
+        """, conn, params=(industry_id,))
+        df_px = pd.read_sql_query("""
+            SELECT date, close_price FROM industry_daily_performance
+            WHERE industry_id = ? ORDER BY date ASC
+        """, conn, params=(industry_id,))
+    df_px = df_px.set_index('date')
+    result = []
+    for _, row in df_op.iterrows():
+        date = row['date']
+        opinion = row['opinion_type']
+        entry = {'date': date, 'opinion': opinion}
+        for n in [1, 3, 5, 10, 20]:
+            try:
+                idx = df_px.index.get_loc(date)
+                if idx + n < len(df_px):
+                    price_now = df_px.iloc[idx]['close_price']
+                    price_future = df_px.iloc[idx + n]['close_price']
+                    ret = (price_future - price_now) / price_now * 100
+                    entry[f'return_{n}d'] = f"{ret:+.2f}%"
+                else:
+                    entry[f'return_{n}d'] = '-'
+            except Exception:
+                entry[f'return_{n}d'] = '-'
+        result.append(entry)
+    # 업종명 조회
+    industry_name = ''
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT industry_name FROM industry_master WHERE industry_id = ?", (industry_id,))
+        row = cur.fetchone()
+        if row:
+            industry_name = row[0]
+    return render_template('stock_momentum_analysis.html', stock_code=industry_id, stock_name=industry_name, analysis_rows=result)
+
+@app.route('/theme/<int:theme_id>/momentum-analysis')
+def theme_momentum_analysis(theme_id):
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        df_op = pd.read_sql_query("""
+            SELECT date, opinion_type FROM investment_opinion
+            WHERE target_id = ? AND target_type = 'THEME'
+            ORDER BY date DESC
+        """, conn, params=(theme_id,))
+        df_px = pd.read_sql_query("""
+            SELECT date, close_price FROM theme_daily_performance
+            WHERE theme_id = ? ORDER BY date ASC
+        """, conn, params=(theme_id,))
+    df_px = df_px.set_index('date')
+    result = []
+    for _, row in df_op.iterrows():
+        date = row['date']
+        opinion = row['opinion_type']
+        entry = {'date': date, 'opinion': opinion}
+        for n in [1, 3, 5, 10, 20]:
+            try:
+                idx = df_px.index.get_loc(date)
+                if idx + n < len(df_px):
+                    price_now = df_px.iloc[idx]['close_price']
+                    price_future = df_px.iloc[idx + n]['close_price']
+                    ret = (price_future - price_now) / price_now * 100
+                    entry[f'return_{n}d'] = f"{ret:+.2f}%"
+                else:
+                    entry[f'return_{n}d'] = '-'
+            except Exception:
+                entry[f'return_{n}d'] = '-'
+        result.append(entry)
+    # 테마명 조회
+    theme_name = ''
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        cur = conn.cursor()
+        cur.execute("SELECT theme_name FROM theme_master WHERE theme_id = ?", (theme_id,))
+        row = cur.fetchone()
+        if row:
+            theme_name = row[0]
+    return render_template('stock_momentum_analysis.html', stock_code=theme_id, stock_name=theme_name, analysis_rows=result)
+
+@app.route('/momentum-optimization', methods=['GET'])
+def momentum_optimization():
+    import numpy as np
+    import sqlite3
+    csv_path = os.path.join(os.path.dirname(__file__), '../../results/optimized_momentum_weights.csv')
+    db_path = os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db')
+    meta = {}
+    top_rows = []
+    best_row = None
+    table = ''
+    weight_compare = []
+    perf_compare = []
+    # 1. 데이터 구간 추출
+    try:
+        with sqlite3.connect(db_path) as conn:
+            cur = conn.cursor()
+            cur.execute("SELECT MIN(date), MAX(date), COUNT(DISTINCT date) FROM momentum_analysis;")
+            min_date, max_date, n_days = cur.fetchone()
+            meta['데이터 구간'] = f"{min_date} ~ {max_date} ({n_days}거래일)"
+    except Exception as e:
+        meta['데이터 구간'] = '-'
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        # 2. 메타데이터
+        meta['조합수'] = len(df)
+        meta['사용 지표'] = [col for col in df.columns if col not in ['BUY_hit_rate_5d','BUY_avg_return_5d']]
+        try:
+            import datetime
+            ctime = datetime.datetime.fromtimestamp(os.path.getctime(csv_path)).strftime('%Y-%m-%d')
+            meta['실험일'] = ctime
+        except:
+            meta['실험일'] = '-'
+        # 3. 최고 성과 조합
+        df_sorted = df.sort_values(by='BUY_hit_rate_5d', ascending=False)
+        best_row = df_sorted.iloc[0].to_dict()
+        # 4. 상위 5개 조합
+        top_rows = df_sorted.head(5).to_dict(orient='records')
+        # 5. 현재/추천 가중치 비교
+        from scripts.optimize_momentum_weights import factors_base
+        weight_compare = []
+        for k in meta['사용 지표']:
+            base = 1.0/len(factors_base) if k in factors_base else 0.0
+            best = best_row.get(k, 0.0)
+            weight_compare.append({'지표': k, '현재': base, '추천': best})
+        # 6. 성과 비교
+        from backtest_momentum_strategy import run_backtest_with_weights
+        base_weights = {k: 1.0/len(factors_base) if k in factors_base else 0.0 for k in meta['사용 지표']}
+        base_res = run_backtest_with_weights(base_weights)
+        best_res = {'BUY_hit_rate_5d': best_row['BUY_hit_rate_5d'], 'BUY_avg_return_5d': best_row['BUY_avg_return_5d']}
+        perf_compare = [
+            {'구분': '현재', 'BUY_hit_rate_5d': base_res.get('BUY_hit_rate_5d', 0), 'BUY_avg_return_5d': base_res.get('BUY_avg_return_5d', 0)},
+            {'구분': '추천', 'BUY_hit_rate_5d': best_res['BUY_hit_rate_5d'], 'BUY_avg_return_5d': best_res['BUY_avg_return_5d']}
+        ]
+        # 7. 전체 표(선택)
+        table = df_sorted.to_html(classes='table table-striped', index=False, border=0)
+    else:
+        table = '<p>최적화 결과 파일이 없습니다.</p>'
+    running = request.args.get('running', '0') == '1'
+    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare, running=running)
+
+@app.route('/momentum-optimization/run', methods=['POST'])
+def run_momentum_optimization():
+    # 백엔드에서 최적화 스크립트 실행
+    script_path = os.path.join(os.path.dirname(__file__), '../../scripts/optimize_momentum_weights.py')
+    try:
+        subprocess.run(['python', script_path], check=True)
+        flash('최적화 테스트가 성공적으로 완료되었습니다.', 'success')
+    except Exception as e:
+        flash(f'최적화 테스트 실행 중 오류 발생: {e}', 'danger')
+    return redirect(url_for('momentum_optimization'))
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

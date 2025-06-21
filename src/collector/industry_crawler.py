@@ -13,6 +13,10 @@ if sys.prefix == sys.base_prefix:
     print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
     sys.exit(1)
 
+# 네이버 금융 업종별 리스트/소속 종목 크롤링 및 DB 저장 모듈
+# - 목적: 업종별 리스트 및 소속 종목 크롤링, DB 저장
+# - 사용법: get_industry_list, get_stocks_by_industry, upsert_industries 등 함수 활용
+
 BASE_URL = "https://finance.naver.com"
 INDUSTRY_URL = f"{BASE_URL}/sise/sise_group.naver?type=upjong"
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))

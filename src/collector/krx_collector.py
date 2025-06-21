@@ -4,6 +4,10 @@ import sqlite3
 from datetime import datetime, timedelta
 import pandas as pd
 
+# KRX(한국거래소) API 기반 전체 종목/일별 시세/시가총액/누락 데이터 자동 보충 모듈
+# - 목적: 전체 상장종목/일별 시세/시가총액 수집 및 DB 저장, 누락 데이터 자동 보충
+# - 사용법: fetch_all_stocks, fetch_daily_stocks, fill_missing_history 등 함수 활용
+
 # venv 활성화 체크 (운영 안전)
 if sys.prefix == sys.base_prefix:
     print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")

@@ -46,7 +46,8 @@
     </nav>
 </div>
 <div class="container mt-4 mb-5">
-    <h2 id="stock-name">{{ stock_name }} <span class="text-muted" id="stock-code">({{ stock_code }})</span><span id="stock-change-rate" class="ms-2{% if change_rate|float > 0 %} positive{% elif change_rate|float < 0 %} negative{% endif %}">{% if change_rate != '정보 없음' %}{{ '%+.2f'|format(change_rate|float) }}%{% else %}정보 없음{% endif %}</span>{% if rebound_rate is not none %}<span class="rebound-rate-info ms-3{% if rebound_rate > 0 %} positive{% elif rebound_rate < 0 %} negative{% endif %}" style="font-size:16px;">(60일저점 반등률: {{ '%+.2f'|format(rebound_rate) }}%)</span>{% endif %}</h2>
+    <h2 id="stock-name">{{ stock_name }} <span class="text-muted" id="stock-code">({{ stock_code }})</span><span id="stock-change-rate" class="ms-2{% if change_rate|float > 0 %} positive{% elif change_rate|float < 0 %} negative{% endif %}">{% if change_rate != '정보 없음' %}{{ '%+.2f'|format(change_rate|float) }}%{% else %}정보 없음{% endif %}</span>{% if rebound_rate is not none %}<span class="rebound-rate-info ms-3{% if rebound_rate > 0 %} positive{% elif rebound_rate < 0 %} negative{% endif %}" style="font-size:16px;">(60일저점 반등률: {{ '%+.2f'|format(rebound_rate) }}%)</span>{% endif %}
+    </h2>
     <div class="mb-3">
         <span class="me-3">업종: <span id="industry">{{ industry }}</span></span>
         <span class="me-3">테마: <span id="theme">{{ theme }}</span></span>

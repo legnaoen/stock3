@@ -269,6 +269,13 @@
             <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="tab" href="#rebound">저점반등주</a>
             </li>
+            <!-- 더보기 드롭다운: 우측 정렬 -->
+            <li class="nav-item dropdown ms-auto">
+                <a class="nav-link dropdown-toggle" data-bs-toggle="dropdown" href="#" role="button" aria-expanded="false">더보기</a>
+                <ul class="dropdown-menu dropdown-menu-end">
+                    <li><a class="dropdown-item" href="/momentum-optimization" target="_blank">모멘텀 최적화</a></li>
+                </ul>
+            </li>
         </ul>
 
         <!-- 탭 내용 -->
@@ -289,8 +296,9 @@
                             <th>업종/테마명</th>
                             <th>등락률</th>
                             <th>상승/하락</th>
-                            <th class="text-right">시가총액</th>
-                            <th class="text-right">거래대금</th>
+                            <th>종합 점수</th>
+                            <th>의견</th>
+                            <th>거래대금</th>
                             <th>주도주</th>
                         </tr>
                     </thead>
@@ -307,7 +315,8 @@
                             <th>업종명</th>
                             <th>등락률</th>
                             <th>상승/하락</th>
-                            <th class="text-right">시가총액</th>
+                            <th class="text-right">종합 점수</th>
+                            <th class="text-right">의견</th>
                             <th class="text-right">거래대금</th>
                             <th>주도주</th>
                         </tr>
@@ -325,7 +334,8 @@
                             <th>테마명</th>
                             <th>등락률</th>
                             <th>상승/하락</th>
-                            <th class="text-right">시가총액</th>
+                            <th class="text-right">종합 점수</th>
+                            <th class="text-right">의견</th>
                             <th class="text-right">거래대금</th>
                             <th>주도주</th>
                         </tr>
@@ -712,6 +722,7 @@
         // 초기 데이터 로드
         document.addEventListener('DOMContentLoaded', function() {
             loadMixedData();
+            loadRecommendationData();
             
             // 새로고침 버튼 이벤트 핸들러
             const themeRefreshBtn = document.getElementById('themeRefreshBtn');
@@ -809,17 +820,14 @@
         function displayIndustryData(data) {
             const tbody = document.querySelector('#industryTable tbody');
             tbody.innerHTML = '';
-            
             data.forEach(item => {
                 const tr = document.createElement('tr');
-                
-                // 순위 컬럼 추가
+                // 순위 컬럼
                 const rankTd = document.createElement('td');
                 const rankSpan = document.createElement('span');
                 rankSpan.className = 'rank-number';
                 rankSpan.textContent = item.rank.current;
                 rankTd.appendChild(rankSpan);
-                
                 if (item.rank.is_new) {
                     const newSpan = document.createElement('span');
                     newSpan.className = 'rank-new';
@@ -837,17 +845,16 @@
                     rankTd.appendChild(changeSpan);
                 }
                 tr.appendChild(rankTd);
-                
-                // 기존 컬럼들 추가
+                // 나머지 컬럼들
                 tr.innerHTML += `
                     <td><a href="/sector_detail?type=industry&id=${encodeURIComponent(item.id || item.name)}">${item.name}</a></td>
                     <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                     <td>${item.up_stocks}/${item.down_stocks}</td>
-                    <td class="text-right">${formatNumber(item.market_cap)}</td>
+                    <td class="text-right">${item.trend_score != null ? item.trend_score.toFixed(0) : '-'}</td>
+                    <td class="text-right">${item.opinion || '-'}</td>
                     <td class="text-right">${formatNumber(item.trading_value)}</td>
                     <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
                 `;
-                
                 tbody.appendChild(tr);
             });
         }
@@ -856,17 +863,14 @@
         function displayThemeData(data) {
             const tbody = document.querySelector('#themeTable tbody');
             tbody.innerHTML = '';
-            
             data.forEach(item => {
                 const tr = document.createElement('tr');
-                
-                // 순위 컬럼 추가
+                // 순위 컬럼
                 const rankTd = document.createElement('td');
                 const rankSpan = document.createElement('span');
                 rankSpan.className = 'rank-number';
                 rankSpan.textContent = item.rank.current;
                 rankTd.appendChild(rankSpan);
-                
                 if (item.rank.is_new) {
                     const newSpan = document.createElement('span');
                     newSpan.className = 'rank-new';
@@ -884,17 +888,16 @@
                     rankTd.appendChild(changeSpan);
                 }
                 tr.appendChild(rankTd);
-                
-                // 기존 컬럼들 추가
+                // 나머지 컬럼들
                 tr.innerHTML += `
                     <td><a href="/sector_detail?type=theme&id=${encodeURIComponent(item.id || item.name)}">${item.name}</a></td>
                     <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
                     <td>${item.up_stocks}/${item.down_stocks}</td>
-                    <td class="text-right">${formatNumber(item.market_cap)}</td>
+                    <td class="text-right">${item.trend_score != null ? item.trend_score.toFixed(0) : '-'}</td>
+                    <td class="text-right">${item.opinion || '-'}</td>
                     <td class="text-right">${formatNumber(item.trading_value)}</td>
                     <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
                 `;
-                
                 tbody.appendChild(tr);
             });
         }
@@ -953,22 +956,23 @@
                     return;
                 }
                 
-                data.data.forEach(item => {
-                    tbody.innerHTML += `
+                data.data.forEach((item, index) => {
+                    // 업종/테마 탭과 동일하게 렌더링
+                    let trendScoreDisplay = (item.trend_score != null && !isNaN(item.trend_score)) ? Number(item.trend_score).toFixed(0) : '-';
+                    let opinionDisplay = (item.opinion != null && item.opinion !== '') ? item.opinion : '-';
+                    let rowHtml = `
                         <tr>
-                            <td>${item.type === 'industry' ? '업종' : '테마'}</td>
-                            <td>
-                                <a href="/sector_detail?type=${item.type}&id=${item.id}">
-                                    ${item.name}
-                                </a>
-                            </td>
-                            <td class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate.toFixed(2)}%</td>
-                            <td>${item.up_stocks}/${item.down_stocks}</td>
-                            <td class="text-right">${formatNumber(item.market_cap)}</td>
-                            <td class="text-right">${formatNumber(item.trading_value)}</td>
-                            <td class="leader-stocks">${item.leader_stocks.join(', ')}</td>
+                            <td class="text-center"><span class="rank-number">${index + 1}</span></td>
+                            <td><a href="/sector_detail?type=${item.type}&id=${item.id}" target="_blank">${item.name}</a></td>
+                            <td class="text-right"><span class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate > 0 ? '+' : ''}${item.change_rate.toFixed(2)}%</span></td>
+                            <td class="text-right">${item.up_stocks}/${item.down_stocks}</td>
+                            <td class="text-right">${trendScoreDisplay}</td>
+                            <td class="text-right">${opinionDisplay}</td>
+                            <td class="text-right">${(item.trading_value / 100000000).toFixed(0)}억</td>
+                            <td><div class="leader-stocks">${(item.leader_stocks || []).join(', ')}</div></td>
                         </tr>
                     `;
+                    tbody.innerHTML += rowHtml;
                 });
             } catch (error) {
                 console.error('업종&테마 데이터 로딩 실패:', error);
@@ -1061,54 +1065,106 @@
             fetch('/api/recommendations')
                 .then(response => response.json())
                 .then(data => {
+                    console.log("추천 데이터 수신:", data);
                     const container = document.getElementById('recommendationData');
-                    container.innerHTML = ''; // 기존 내용 초기화
-                    if (data.data.length === 0) {
-                        container.innerHTML = '<div class="alert alert-info">추천 데이터가 없습니다.</div>';
-                        return;
-                    }
+                    container.innerHTML = '';
+                    if (data.data && data.data.length > 0) {
+                        data.data.forEach(item => {
+                            const card = document.createElement('div');
+                            card.className = 'recommendation-card';
 
-                    data.data.forEach(item => {
-                        const opinionClass = item.opinion.toLowerCase().replace('_', '-');
-                        const changeRateClass = item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down';
-                        const changeRateSign = item.change_rate > 0 ? '+' : '';
+                            // API 변경사항에 맞춰 키 이름 수정 (item.id -> item.item_code, item.name -> item.item_name 등)
+                            const detailUrl = `/sector_detail?type=${item.type.toLowerCase()}&id=${item.item_code}`;
+                            
+                            const leaderStockChips = item.leader_stocks.map(stock => 
+                                `<a href="/stock_detail?code=${stock.code}" class="leader-stock-chip" target="_blank">${stock.name}</a>`
+                            ).join('');
 
-                        const leaderStockChips = item.leader_stocks.map(stock => 
-                            `<a href="/stock_detail?code=${stock.code}" class="leader-stock-chip" target="_blank">${stock.name}</a>`
-                        ).join('');
-
-                        const card = `
-                            <div class="recommendation-card">
+                            const cardHeader = `
                                 <div class="rec-card-header">
                                     <div class="rec-card-title">
-                                        <span class="type-badge">${item.type === 'theme' ? '테마' : '업종'}</span>
-                                        <span class="name">${item.name}</span>
+                                        <span class="type-badge">${item.type === 'INDUSTRY' ? '업종' : '테마'}</span>
+                                        <a class="name" href="${detailUrl}">${item.item_name}</a>
                                     </div>
-                                    <div class="rec-card-score">${item.score.toFixed(2)}<span class="unit">점</span></div>
+                                    <div class="rec-card-score">
+                                        ${Math.round(item.trend_score)} <span class="unit">점</span>
+                                    </div>
                                 </div>
+                            `;
+
+                            // '투자의견' 부분 제거하고 단순화
+                            const cardBody = `
                                 <div class="rec-card-body">
-                                    <span class="opinion-badge ${opinionClass}">${item.opinion.replace('_', ' ')}</span>
-                                    <div class="mt-2">
-                                        <strong class="leader-title">핵심 주도주:</strong>
-                                        ${leaderStockChips}
-                                    </div>
-                                </div>
-                                <div class="rec-card-footer">
                                     <div>
-                                        <span>등락률: <span class="${changeRateClass}">${changeRateSign}${item.change_rate.toFixed(2)}%</span></span>
-                                        <span class="ms-3">거래대금: ${(item.trading_value / 100000000).toFixed(0)}억</span>
+                                        <span class="leader-title">핵심 주도주:</span>
+                                        ${leaderStockChips || '<span class="text-muted" style="font-size:0.9em; margin-left: 5px;">없음</span>'}
                                     </div>
-                                    <a href="/sector_detail?type=${item.type}&id=${item.id}" target="_blank">상세 분석 보기 &gt;</a>
                                 </div>
-                            </div>
-                        `;
-                        container.innerHTML += card;
-                    });
+                            `;
+
+                            const cardFooter = `
+                                <div class="rec-card-footer">
+                                    <span>거래대금: ₩${(item.trading_value / 100000000).toFixed(0)}억</span>
+                                    <span>모멘텀(P/V): ${item.price_momentum ? item.price_momentum.toFixed(1) : 'N/A'} / ${item.volume_momentum ? item.volume_momentum.toFixed(1) : 'N/A'}</span>
+                                    <span>RSI: ${item.rsi_score ? item.rsi_score.toFixed(1) : 'N/A'}</span>
+                                </div>
+                            `;
+
+                            card.innerHTML = cardHeader + cardBody + cardFooter;
+                            container.appendChild(card);
+                        });
+                    } else {
+                        container.innerHTML = '<p>추천 데이터가 없습니다.</p>';
+                    }
                 })
                 .catch(error => {
                     console.error('추천 데이터 로딩 중 오류 발생:', error);
                     const container = document.getElementById('recommendationData');
                     container.innerHTML = '<div class="alert alert-danger">데이터를 불러오는 중 오류가 발생했습니다.</div>';
+                });
+        }
+
+        function loadTableData(url, tableBodyId) {
+            return fetch(url)
+                .then(response => response.json())
+                .then(data => {
+                    const tbody = document.getElementById(tableBodyId);
+                    tbody.innerHTML = '';
+                    if (data.market_status) {
+                        updateMarketStatus(data.market_status, data.date);
+                    }
+                    if (data.data) {
+                        data.data.forEach((item, index) => {
+                            let rankHtml;
+                            if (item.rank) {
+                                const rank = item.rank.current;
+                                const prev_rank = item.rank.previous;
+                                let changeHtml = '';
+                                if (prev_rank !== null && rank !== prev_rank) {
+                                    const change = prev_rank - rank;
+                                    changeHtml = `<span class="rank-change ${change > 0 ? 'up' : 'down'}">${change > 0 ? '▲' : '▼'}${Math.abs(change)}</span>`;
+                                } else if (prev_rank === null) {
+                                    changeHtml = `<span class="rank-new">NEW</span>`;
+                                }
+                                rankHtml = `<span class="rank-number">${rank}</span>${changeHtml}`;
+                            } else {
+                                rankHtml = `<span class="rank-number">${index + 1}</span>`;
+                            }
+
+                            let rowHtml = `
+                                <tr>
+                                    <td class="text-center">${rankHtml}</td>
+                                    <td><a href="/sector_detail?type=${item.type}&id=${item.id}" target="_blank">${item.name}</a></td>
+                                    <td class="text-right"><span class="${item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down'}">${item.change_rate > 0 ? '+' : ''}${item.change_rate.toFixed(2)}%</span></td>
+                                    <td class="text-right">${item.up_stocks}/${item.down_stocks}</td>
+                                    <td class="text-right">${(item.market_cap / 100000000).toFixed(0)}억</td>
+                                    <td class="text-right">${(item.trading_value / 100000000).toFixed(0)}억</td>
+                                    <td><div class="leader-stocks">${(item.leader_stocks || []).join(', ')}</div></td>
+                                </tr>
+                            `;
+                            tbody.innerHTML += rowHtml;
+                        });
+                    }
                 });
         }
     </script>

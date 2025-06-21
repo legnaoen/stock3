@@ -1,3 +1,6 @@
+# DB 내 업종/테마 매핑 현황 점검 및 통계 출력 스크립트
+# - 목적: stock_master.db 내 종목별 업종/테마 매핑 현황 및 통계 확인
+# - 사용법: python scripts/db_check.py
 import sqlite3
 import os
 

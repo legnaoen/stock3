@@ -78,4 +78,22 @@ CREATE TABLE IF NOT EXISTS industry_daily_performance (
 CREATE INDEX IF NOT EXISTS idx_theme_daily_date ON theme_daily_performance(date);
 CREATE INDEX IF NOT EXISTS idx_industry_daily_date ON industry_daily_performance(date);
 CREATE INDEX IF NOT EXISTS idx_theme_stock_theme_id ON theme_stock_mapping(theme_id);
-CREATE INDEX IF NOT EXISTS idx_industry_stock_industry_id ON industry_stock_mapping(industry_id); 
+CREATE INDEX IF NOT EXISTS idx_industry_stock_industry_id ON industry_stock_mapping(industry_id);
+
+-- 시장 지수 일별 데이터 및 모멘텀 테이블 (KOSPI, KOSDAQ 등)
+CREATE TABLE IF NOT EXISTS market_index_daily (
+    date TEXT NOT NULL,
+    index_name TEXT NOT NULL,   -- 'KOSPI', 'KOSDAQ' 등
+    open FLOAT,
+    high FLOAT,
+    low FLOAT,
+    close FLOAT,
+    volume INTEGER,
+    trading_value INTEGER,
+    momentum_1d FLOAT,
+    momentum_3d FLOAT,
+    momentum_5d FLOAT,
+    momentum_10d FLOAT,
+    momentum_20d FLOAT,
+    PRIMARY KEY (date, index_name)
+); 

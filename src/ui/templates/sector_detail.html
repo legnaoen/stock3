@@ -54,7 +54,9 @@
             </ol>
         </nav>
         <div class="sector-info">
-            <h2 id="sector-name" class="mb-4"></h2>
+            <h2 id="sector-name" class="mb-4">
+                <a id="momentum-analysis-btn" class="btn btn-sm btn-primary ms-3" style="display:none;">모멘텀 분석</a>
+            </h2>
             <div class="summary">
                 <div class="summary-item">
                     <strong>전체 종목 수:</strong> <span id="total-stocks"></span>
@@ -70,6 +72,8 @@
                 </div>
             </div>
         </div>
+        <div id="momentum-analysis" class="mb-3"></div>
+        <div id="momentum-analysis-comment" class="mb-3"></div>
         <div class="d-flex align-items-center mb-2">
             <label class="me-2">기간</label>
             <select id="chartDays" class="form-select w-auto me-3">
@@ -162,6 +166,44 @@
                     document.getElementById('change-ratio').innerHTML = formatChangeRatio(changeRatio);
                     document.getElementById('breadcrumb-sector-name').textContent = info.name;
 
+                    // [추가] 모멘텀/시세지표 분석 결과 표시
+                    const momentum = info.momentum_analysis;
+                    const momDiv = document.getElementById('momentum-analysis');
+                    if(momentum) {
+                        let html = '<h5>모멘텀 및 시세지표 분석 결과</h5><table class="table table-bordered table-sm w-auto"><tbody>';
+                        const fields = [
+                            ['price_momentum_3d', '3일 가격모멘텀(%)'],
+                            ['price_momentum_5d', '5일 가격모멘텀(%)'],
+                            ['price_momentum_10d', '10일 가격모멘텀(%)'],
+                            ['volume_momentum_3d', '3일 거래대금모멘텀(%)'],
+                            ['rsi_value', 'RSI'],
+                            ['leader_momentum', '주도주 모멘텀(%)'],
+                            ['trend_score', '종합 추세점수']
+                        ];
+                        fields.forEach(([key, label]) => {
+                            if(momentum[key] !== undefined && momentum[key] !== null) {
+                                html += `<tr><th>${label}</th><td>${momentum[key]}</td></tr>`;
+                            }
+                        });
+                        html += '</tbody></table>';
+                        momDiv.innerHTML = html;
+                    } else {
+                        momDiv.innerHTML = '<div class="text-muted">분석 데이터가 없습니다.</div>';
+                    }
+
+                    // [추가] 모멘텀/시세지표 해석 코멘트 표시
+                    const momCommentDiv = document.getElementById('momentum-analysis-comment');
+                    if(info.momentum_analysis_comment && info.momentum_analysis_comment.length > 0) {
+                        let html = '<ul style="margin-bottom:0;">';
+                        info.momentum_analysis_comment.forEach(c => {
+                            html += `<li>${c}</li>`;
+                        });
+                        html += '</ul>';
+                        momCommentDiv.innerHTML = html;
+                    } else {
+                        momCommentDiv.innerHTML = '';
+                    }
+
                     // 종목 테이블 초기화
                     $('#stocks-table').DataTable({
                         data: data.stocks,
@@ -201,6 +243,16 @@
                             url: '//cdn.datatables.net/plug-ins/1.10.24/i18n/Korean.json'
                         }
                     });
+
+                    const btn = document.getElementById('momentum-analysis-btn');
+                    if (sectorType && sectorId && btn) {
+                        btn.style.display = '';
+                        if (sectorType === 'industry') {
+                            btn.href = `/industry/${sectorId}/momentum-analysis`;
+                        } else if (sectorType === 'theme') {
+                            btn.href = `/theme/${sectorId}/momentum-analysis`;
+                        }
+                    }
                 })
                 .catch(error => {
                     console.error('Error:', error);
