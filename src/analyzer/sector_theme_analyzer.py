@@ -1,6 +1,7 @@
 import os
 import sys
 import sqlite3
+import pandas as pd
 from datetime import datetime
 from typing import List, Dict, Tuple
 from src.utils.market_time import get_market_date
@@ -47,190 +48,274 @@ def init_performance_tables():
 
 def get_industry_performance(date: str = None, save_to_db: bool = True) -> List[Dict]:
     """
-    업종별 등락률을 시가총액 가중평균으로 계산하고 선택적으로 DB에 저장
-    
-    Args:
-        date: 날짜 (YYYY-MM-DD). None인 경우 최근 거래일 사용
-        save_to_db: DB에 결과를 저장할지 여부
-        
-    Returns:
-        업종별 등락률 리스트 (시가총액 가중평균 기준 내림차순 정렬)
+    업종별 성과를 계산하고, 통계 기반 로직으로 주도주를 선정하여 DB에 저장합니다.
+    - 주도주 로직은 get_theme_performance와 동일하게 적용됩니다.
+    - 업종 성과는 시가총액 가중 등락률을 사용합니다.
     """
     if not date:
         date = get_market_date()
-        
+
     query = """
-    WITH industry_stats AS (
-        SELECT 
-            i.industry_id,
-            i.industry_name,
-            ROUND(SUM(d.price_change_ratio * d.market_cap) / SUM(d.market_cap), 2) as weighted_change_rate,
-            SUM(d.volume) as total_volume,
-            SUM(d.market_cap) as total_market_cap,
-            SUM(d.trading_value) as total_trading_value,
-            COUNT(DISTINCT m.stock_code) as total_stocks,
-            SUM(CASE WHEN d.price_change_ratio > 0 THEN 1 ELSE 0 END) as up_stocks,
-            SUM(CASE WHEN d.price_change_ratio < 0 THEN 1 ELSE 0 END) as down_stocks,
-            SUM(CASE WHEN d.price_change_ratio = 0 THEN 1 ELSE 0 END) as unchanged_stocks,
-            GROUP_CONCAT(
-                CASE 
-                    WHEN d.market_cap >= (SELECT market_cap FROM DailyStocks d2 
-                                        WHERE d2.stock_code = m.stock_code 
-                                        AND d2.date = ? 
-                                        ORDER BY d2.market_cap DESC 
-                                        LIMIT 1 OFFSET 4) 
-                    THEN m.stock_code 
-                END
-            ) as leader_stock_codes
-        FROM industry_master i
-        JOIN industry_stock_mapping m ON i.industry_id = m.industry_id
-        JOIN DailyStocks d ON m.stock_code = d.stock_code
-        WHERE d.date = ?
-        GROUP BY i.industry_id, i.industry_name
-    )
-    SELECT 
-        industry_id,
-        industry_name,
-        weighted_change_rate,
-        total_volume,
-        total_market_cap,
-        total_trading_value,
-        total_stocks,
-        up_stocks,
-        down_stocks,
-        unchanged_stocks,
-        leader_stock_codes
-    FROM industry_stats
-    ORDER BY weighted_change_rate DESC
+    SELECT
+        m.industry_id,
+        i.industry_name,
+        m.stock_code,
+        st.stock_name,
+        d.price_change_ratio,
+        d.trading_value,
+        d.market_cap,
+        d.volume
+    FROM industry_stock_mapping m
+    JOIN industry_master i ON m.industry_id = i.industry_id
+    JOIN DailyStocks d ON m.stock_code = d.stock_code
+    JOIN Stocks st ON d.stock_code = st.stock_code
+    WHERE d.date = ?
     """
-    
-    results = []
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, (date, date))
-        rows = cursor.fetchall()
+        df = pd.read_sql_query(query, conn, params=(date,))
+
+    if df.empty:
+        return []
         
-        for rank, row in enumerate(rows, 1):  # 순위는 1부터 시작
-            result = {
-                'id': row[0],
-                'name': row[1],
-                'change_rate': row[2],
-                'volume': row[3],
-                'market_cap': row[4],
-                'trading_value': row[5],
-                'total_stocks': row[6],
-                'up_stocks': row[7],
-                'down_stocks': row[8],
-                'unchanged_stocks': row[9],
-                'leader_stocks': row[10],
-                'rank': rank  # 순위 정보 추가
-            }
-            results.append(result)
-            
-            if save_to_db:
-                with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
-                    perf_conn.execute("""
-                        INSERT OR REPLACE INTO industry_daily_performance
-                        (industry_id, date, price_change_ratio, volume, market_cap, trading_value,
-                         leader_stock_codes, rank)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row[0], date, row[2], row[3], row[4], row[5], row[10], rank))
+    # Pandas를 사용하여 그룹별 통계 계산
+    stats = df.groupby('industry_id').agg(
+        total_stocks_in_industry=('stock_code', 'count'),
+        avg_change_rate=('price_change_ratio', 'mean'),
+        stdev_change_rate=('price_change_ratio', 'std'),
+        avg_trading_value=('trading_value', 'mean'),
+        stdev_trading_value=('trading_value', 'std'),
+        median_trading_value=('trading_value', 'median')
+    ).reset_index()
+    
+    df = pd.merge(df, stats, on='industry_id')
+    # NaN 값을 0으로 채움 (표준편차 계산 시 샘플이 1개인 경우 등)
+    df.fillna({'stdev_change_rate': 0, 'stdev_trading_value': 0}, inplace=True)
+
+    # 1단계: 1차 후보군 선정 (규칙 확장)
+    # 경로 A(일반): 등락률 5% 이상 & 거래대금 30억 이상
+    # 경로 B(폭등주 예외): 등락률 20% 이상
+    df_filtered = df[
+        ((df['price_change_ratio'] >= 5) & (df['trading_value'] >= 3000000000)) |
+        (df['price_change_ratio'] >= 20)
+    ].copy()
+
+    leader_stocks_by_industry = {}
+    for industry_id, group in df_filtered.groupby('industry_id'):
+        total_stocks = group['total_stocks_in_industry'].iloc[0]
+        leader_candidates = pd.DataFrame()
+
+        if total_stocks <= 5:
+            leader_candidates = group
+        else:
+            # [수정] 중앙값 기준 완화 (x3 -> x2)
+            median_val = group['median_trading_value'].iloc[0]
+            leader_candidates = group[group['trading_value'] > median_val * 2]
+
+        if not leader_candidates.empty:
+            stdev_rate = leader_candidates['stdev_change_rate'].iloc[0]
+            stdev_val = leader_candidates['stdev_trading_value'].iloc[0]
+            rate_zscore = ((leader_candidates['price_change_ratio'] - leader_candidates['avg_change_rate']) / stdev_rate) if stdev_rate > 0 else 0
+            value_zscore = ((leader_candidates['trading_value'] - leader_candidates['avg_trading_value']) / stdev_val) if stdev_val > 0 else 0
+            leader_candidates.loc[:, 'rank_score'] = (value_zscore * 0.6) + (rate_zscore * 0.4)
+            top_leaders = leader_candidates.nlargest(5, 'rank_score')
+            leader_stocks_by_industry[industry_id] = ','.join(top_leaders['stock_code'])
+
+    # 4단계: "주도주 없음" 방지 장치
+    all_industry_ids = df['industry_id'].unique()
+    for industry_id in all_industry_ids:
+        if industry_id not in leader_stocks_by_industry or not leader_stocks_by_industry[industry_id]:
+            industry_df = df[df['industry_id'] == industry_id]
+            # 등락률 0% 초과 종목 중 1위 선정
+            top_stock = industry_df[industry_df['price_change_ratio'] > 0].nlargest(1, 'price_change_ratio')
+            if not top_stock.empty:
+                leader_stocks_by_industry[industry_id] = top_stock['stock_code'].iloc[0]
+
+    # 업종별 전체 성과 집계 (시가총액 가중 방식)
+    def weighted_avg(x):
+        try:
+            return (x['price_change_ratio'] * x['market_cap']).sum() / x['market_cap'].sum()
+        except ZeroDivisionError:
+            return 0
+
+    industry_performance = df.groupby(['industry_id', 'industry_name']).apply(lambda x: pd.Series({
+        'weighted_change_rate': weighted_avg(x),
+        'total_volume': x['volume'].sum(),
+        'total_market_cap': x['market_cap'].sum(),
+        'total_trading_value': x['trading_value'].sum(),
+        'total_stocks': x['stock_code'].nunique(),
+        'up_stocks': (x['price_change_ratio'] > 0).sum(),
+        'down_stocks': (x['price_change_ratio'] < 0).sum(),
+        'unchanged_stocks': (x['price_change_ratio'] == 0).sum(),
+        'leader_stocks': leader_stocks_by_industry.get(x.name[0], '')
+    })).reset_index()
+
+    industry_performance = industry_performance.sort_values(by='weighted_change_rate', ascending=False).reset_index(drop=True)
+    industry_performance['rank'] = industry_performance.index + 1
+    
+    results = industry_performance.to_dict('records')
+
+    if save_to_db and not industry_performance.empty:
+        db_data_to_save = industry_performance[[
+            'industry_id', 'weighted_change_rate', 'total_volume', 'total_market_cap',
+            'total_trading_value', 'leader_stocks', 'rank'
+        ]].copy()
+        db_data_to_save['date'] = date
+        db_data_to_save = db_data_to_save[[
+            'industry_id', 'date', 'weighted_change_rate', 'total_volume',
+            'total_market_cap', 'total_trading_value', 'leader_stocks', 'rank'
+        ]]
+
+        with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
+            perf_conn.execute("DELETE FROM industry_daily_performance WHERE date = ?", (date,))
+            perf_conn.executemany("""
+                INSERT INTO industry_daily_performance
+                (industry_id, date, price_change_ratio, volume, market_cap, trading_value,
+                 leader_stock_codes, rank)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """, db_data_to_save.to_records(index=False).tolist())
     
     return results
 
 def get_theme_performance(date: str = None, save_to_db: bool = True) -> List[Dict]:
     """
-    테마별 등락률을 시가총액 가중평균으로 계산하고 선택적으로 DB에 저장
-    
-    Args:
-        date: 날짜 (YYYY-MM-DD). None인 경우 최근 거래일 사용
-        save_to_db: DB에 결과를 저장할지 여부
-        
-    Returns:
-        테마별 등락률 리스트 (시가총액 가중평균 기준 내림차순 정렬)
+    테마별 성과를 계산하고, 통계 기반의 새로운 로직으로 주도주를 선정하여 DB에 저장합니다.
+    - 주도주 선정 로직 (v3) / 업종 로직과 동일
+    - 테마 성과는 단순 평균 등락률과 시가총액 가중 등락률을 모두 계산.
     """
     if not date:
         date = get_market_date()
-        
+
     query = """
-    WITH theme_stats AS (
-        SELECT 
-            t.theme_id,
-            t.theme_name,
-            ROUND(AVG(d.price_change_ratio), 2) as simple_change_rate,  -- 단순 평균
-            ROUND(SUM(d.price_change_ratio * d.market_cap) / SUM(d.market_cap), 2) as weighted_change_rate,  -- 시가총액 가중평균 (참고용)
-            SUM(d.volume) as total_volume,
-            SUM(d.market_cap) as total_market_cap,
-            SUM(d.trading_value) as total_trading_value,
-            COUNT(DISTINCT m.stock_code) as total_stocks,
-            SUM(CASE WHEN d.price_change_ratio > 0 THEN 1 ELSE 0 END) as up_stocks,
-            SUM(CASE WHEN d.price_change_ratio < 0 THEN 1 ELSE 0 END) as down_stocks,
-            SUM(CASE WHEN d.price_change_ratio = 0 THEN 1 ELSE 0 END) as unchanged_stocks,
-            GROUP_CONCAT(
-                CASE 
-                    WHEN d.market_cap >= (SELECT market_cap FROM DailyStocks d2 
-                                        WHERE d2.stock_code = m.stock_code 
-                                        AND d2.date = ? 
-                                        ORDER BY d2.market_cap DESC 
-                                        LIMIT 1 OFFSET 4) 
-                    THEN m.stock_code 
-                END
-            ) as leader_stock_codes
-        FROM theme_master t
-        JOIN theme_stock_mapping m ON t.theme_id = m.theme_id
-        JOIN DailyStocks d ON m.stock_code = d.stock_code
-        WHERE d.date = ?
-        GROUP BY t.theme_id, t.theme_name
-    )
-    SELECT 
-        theme_id,
-        theme_name,
-        simple_change_rate as weighted_change_rate,  -- 단순 평균을 주 등락률로 사용
-        weighted_change_rate as market_cap_weighted_rate,  -- 시가총액 가중평균은 참고용으로 저장
-        total_volume,
-        total_market_cap,
-        total_trading_value,
-        total_stocks,
-        up_stocks,
-        down_stocks,
-        unchanged_stocks,
-        leader_stock_codes
-    FROM theme_stats
-    ORDER BY simple_change_rate DESC  -- 정렬 기준도 단순 평균으로 변경
+    SELECT
+        m.theme_id,
+        t.theme_name,
+        m.stock_code,
+        st.stock_name,
+        d.price_change_ratio,
+        d.trading_value,
+        d.market_cap,
+        d.volume
+    FROM theme_stock_mapping m
+    JOIN theme_master t ON m.theme_id = t.theme_id
+    JOIN DailyStocks d ON m.stock_code = d.stock_code
+    JOIN Stocks st ON d.stock_code = st.stock_code
+    WHERE d.date = ?
     """
-    
-    results = []
+
     with sqlite3.connect(DB_PATH) as conn:
-        cursor = conn.cursor()
-        cursor.execute(query, (date, date))
-        rows = cursor.fetchall()
+        df = pd.read_sql_query(query, conn, params=(date,))
+
+    if df.empty:
+        return []
+
+    # Pandas를 사용하여 그룹별 통계 계산
+    stats = df.groupby('theme_id').agg(
+        total_stocks_in_theme=('stock_code', 'count'),
+        avg_change_rate=('price_change_ratio', 'mean'),
+        stdev_change_rate=('price_change_ratio', 'std'),
+        avg_trading_value=('trading_value', 'mean'),
+        stdev_trading_value=('trading_value', 'std'),
+        median_trading_value=('trading_value', 'median')
+    ).reset_index()
+
+    df = pd.merge(df, stats, on='theme_id')
+    # NaN 값을 0으로 채움 (표준편차 계산 시 샘플이 1개인 경우 등)
+    df.fillna({'stdev_change_rate': 0, 'stdev_trading_value': 0}, inplace=True)
+
+    # 1단계: 1차 후보군 선정 (규칙 확장)
+    # 경로 A(일반): 등락률 5% 이상 & 거래대금 30억 이상
+    # 경로 B(폭등주 예외): 등락률 20% 이상
+    df_filtered = df[
+        ((df['price_change_ratio'] >= 5) & (df['trading_value'] >= 3000000000)) |
+        (df['price_change_ratio'] >= 20)
+    ].copy()
+
+    leader_stocks_by_theme = {}
+
+    # 각 테마별로 주도주 선정 로직 적용
+    for theme_id, group in df_filtered.groupby('theme_id'):
+        total_stocks = group['total_stocks_in_theme'].iloc[0]
         
-        for rank, row in enumerate(rows, 1):  # 순위는 1부터 시작
-            result = {
-                'id': row[0],
-                'name': row[1],
-                'change_rate': row[2],
-                'volume': row[4],
-                'market_cap': row[5],
-                'trading_value': row[6],
-                'total_stocks': row[7],
-                'up_stocks': row[8],
-                'down_stocks': row[9],
-                'unchanged_stocks': row[10],
-                'leader_stocks': row[11],
-                'rank': rank  # 순위 정보 추가
-            }
-            results.append(result)
+        leader_candidates = pd.DataFrame()
+
+        # 2단계: 그룹 규모에 따른 로직 분기
+        if total_stocks <= 5:
+            leader_candidates = group
+        else: # total_stocks > 5
+            # [수정] 중앙값 기준 완화 (x3 -> x2)
+            median_val = group['median_trading_value'].iloc[0]
+            leader_candidates = group[group['trading_value'] > median_val * 2]
+
+        # 3단계: 최종 주도주 선정 (랭킹 및 Top 5)
+        if not leader_candidates.empty:
+            stdev_rate = leader_candidates['stdev_change_rate'].iloc[0]
+            stdev_val = leader_candidates['stdev_trading_value'].iloc[0]
+
+            rate_zscore = ((leader_candidates['price_change_ratio'] - leader_candidates['avg_change_rate']) / stdev_rate) if stdev_rate > 0 else 0
+            value_zscore = ((leader_candidates['trading_value'] - leader_candidates['avg_trading_value']) / stdev_val) if stdev_val > 0 else 0
+
+            leader_candidates.loc[:, 'rank_score'] = (value_zscore * 0.6) + (rate_zscore * 0.4)
+
+            top_leaders = leader_candidates.nlargest(5, 'rank_score')
+            leader_stocks_by_theme[theme_id] = ','.join(top_leaders['stock_code'])
+
+    # 4단계: "주도주 없음" 방지 장치
+    all_theme_ids = df['theme_id'].unique()
+    for theme_id in all_theme_ids:
+        if theme_id not in leader_stocks_by_theme or not leader_stocks_by_theme[theme_id]:
+            theme_df = df[df['theme_id'] == theme_id]
+            # 등락률 0% 초과 종목 중 1위 선정
+            top_stock = theme_df[theme_df['price_change_ratio'] > 0].nlargest(1, 'price_change_ratio')
+            if not top_stock.empty:
+                leader_stocks_by_theme[theme_id] = top_stock['stock_code'].iloc[0]
+
+    # 테마별 전체 성과 집계
+    def weighted_avg(x):
+        try:
+            return (x['price_change_ratio'] * x['market_cap']).sum() / x['market_cap'].sum()
+        except ZeroDivisionError:
+            return 0
             
-            if save_to_db:
-                with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
-                    perf_conn.execute("""
-                        INSERT OR REPLACE INTO theme_daily_performance
-                        (theme_id, date, price_change_ratio, market_cap_weighted_ratio, volume, market_cap, 
-                         trading_value, leader_stock_codes, rank)
-                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """, (row[0], date, row[2], row[3], row[4], row[5], row[6], row[11], rank))
+    theme_performance = df.groupby(['theme_id', 'theme_name']).apply(lambda x: pd.Series({
+        'simple_change_rate': x['price_change_ratio'].mean(),
+        'market_cap_weighted_rate': weighted_avg(x),
+        'total_volume': x['volume'].sum(),
+        'total_market_cap': x['market_cap'].sum(),
+        'total_trading_value': x['trading_value'].sum(),
+        'total_stocks': x['stock_code'].nunique(),
+        'up_stocks': (x['price_change_ratio'] > 0).sum(),
+        'down_stocks': (x['price_change_ratio'] < 0).sum(),
+        'unchanged_stocks': (x['price_change_ratio'] == 0).sum(),
+        'leader_stocks': leader_stocks_by_theme.get(x.name[0], '')
+    })).reset_index()
+
+    # 순위 매기기 (단순 평균 등락률 기준)
+    theme_performance = theme_performance.sort_values(by='simple_change_rate', ascending=False).reset_index(drop=True)
+    theme_performance['rank'] = theme_performance.index + 1
     
+    results = theme_performance.to_dict('records')
+
+    if save_to_db and not theme_performance.empty:
+        db_data_to_save = theme_performance[[
+            'theme_id', 'simple_change_rate', 'market_cap_weighted_rate', 'total_volume', 
+            'total_market_cap', 'total_trading_value', 'leader_stocks', 'rank'
+        ]].copy()
+        db_data_to_save['date'] = date
+        
+        db_data_to_save = db_data_to_save[[
+            'theme_id', 'date', 'simple_change_rate', 'market_cap_weighted_rate', 'total_volume',
+            'total_market_cap', 'total_trading_value', 'leader_stocks', 'rank'
+        ]]
+
+        with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
+            perf_conn.execute("DELETE FROM theme_daily_performance WHERE date = ?", (date,))
+            perf_conn.executemany("""
+                INSERT INTO theme_daily_performance
+                (theme_id, date, price_change_ratio, market_cap_weighted_ratio, volume, market_cap,
+                 trading_value, leader_stock_codes, rank)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """, db_data_to_save.to_records(index=False).tolist())
+            
     return results
 
 def get_top_stocks_by_sector(sector_id: int, sector_type: str, date: str = None, limit: int = 5) -> List[Dict]:
@@ -319,9 +404,9 @@ if __name__ == "__main__":
     print(f"\n[{target_date}] 기준 상위 5개 업종:")
     top_industries = get_industry_performance(target_date, save_to_db=False)
     for i in top_industries[:5]:
-        print(f"- {i['name']}: {i['change_rate']}% (상승 {i['up_stocks']}, 하락 {i['down_stocks']}")
+        print(f"- {i['industry_name']}: {i['weighted_change_rate']}% (상승 {i['up_stocks']}, 하락 {i['down_stocks']}")
         
     print(f"\n[{target_date}] 기준 상위 5개 테마:")
     top_themes = get_theme_performance(target_date, save_to_db=False)
     for t in top_themes[:5]:
-        print(f"- {t['name']}: {t['change_rate']}% (상승 {t['up_stocks']}, 하락 {t['down_stocks']}") 
+        print(f"- {t['theme_name']}: {t['simple_change_rate']}% (상승 {t['up_stocks']}, 하락 {t['down_stocks']}") 

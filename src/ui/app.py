@@ -976,5 +976,91 @@ def theme_filter_demo():
     
     return render_template('theme_filter_demo.html', themes=unique_themes, stocks=sample_stocks)
 
+@app.route('/api/recommendations')
+def get_recommendations():
+    """
+    '추천' 탭을 위한 데이터를 반환합니다.
+    - 투자의견이 STRONG_BUY, BUY인 대상
+    - trend_score, 주도주 등 상세 정보 포함
+    """
+    limit = int(request.args.get('limit', 20))
+    
+    with sqlite3.connect(THEME_INDUSTRY_DB) as conn:
+        cursor = conn.cursor()
+        
+        # 1. DB에서 가장 최근 데이터 날짜를 기준으로 설정
+        cursor.execute("SELECT MAX(date) FROM investment_opinion")
+        date_row = cursor.fetchone()
+        if not date_row or not date_row[0]:
+            return jsonify({'data': [], 'date': 'N/A'})
+        date = date_row[0]
+
+        cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
+        
+        # 2. 추천 대상 데이터 조회 (업종/테마 결합)
+        query = """
+            WITH recommendations AS (
+                SELECT io.date, io.target_id, io.target_type, io.opinion_type, ma.trend_score
+                FROM investment_opinion io
+                JOIN momentum_analysis ma ON io.target_id = ma.target_id AND io.target_type = ma.target_type AND io.date = ma.date
+                WHERE io.date = ? AND io.opinion_type IN ('STRONG_BUY', 'BUY')
+            ),
+            combined_data AS (
+                SELECT 'theme' as type, r.target_id as id, m.theme_name as name, r.opinion_type, r.trend_score,
+                       p.price_change_ratio, p.trading_value, p.leader_stock_codes
+                FROM recommendations r
+                JOIN master.theme_master m ON r.target_id = m.theme_id
+                JOIN theme_daily_performance p ON r.target_id = p.theme_id AND r.date = p.date
+                WHERE r.target_type = 'THEME'
+                UNION ALL
+                SELECT 'industry' as type, r.target_id as id, m.industry_name as name, r.opinion_type, r.trend_score,
+                       p.price_change_ratio, p.trading_value, p.leader_stock_codes
+                FROM recommendations r
+                JOIN master.industry_master m ON r.target_id = m.industry_id
+                JOIN industry_daily_performance p ON r.target_id = p.industry_id AND r.date = p.date
+                WHERE r.target_type = 'INDUSTRY'
+            )
+            SELECT * FROM combined_data ORDER BY trend_score DESC LIMIT ?
+        """
+        
+        cursor.execute(query, (date, limit))
+        rows = cursor.fetchall()
+        
+        # 3. 주도주 코드 리스트 수집
+        all_leader_codes = set()
+        for row in rows:
+            codes = row[7] # leader_stock_codes
+            if codes:
+                all_leader_codes.update(codes.split(','))
+        
+        # 4. 주도주 코드 -> 이름 변환 맵 생성
+        stock_name_map = {}
+        if all_leader_codes:
+            placeholders = ','.join(['?'] * len(all_leader_codes))
+            stock_query = f"SELECT stock_code, stock_name FROM master.Stocks WHERE stock_code IN ({placeholders})"
+            cursor.execute(stock_query, list(all_leader_codes))
+            stock_name_map = dict(cursor.fetchall())
+            
+        # 5. 최종 결과 데이터 조립
+        results = []
+        for row in rows:
+            leader_codes = row[7].split(',') if row[7] else []
+            leader_stocks = [{'code': code, 'name': stock_name_map.get(code, code)} for code in leader_codes]
+            
+            results.append({
+                'type': row[0],
+                'id': row[1],
+                'name': row[2],
+                'opinion': row[3],
+                'score': row[4],
+                'change_rate': row[5],
+                'trading_value': row[6],
+                'leader_stocks': leader_stocks
+            })
+            
+        cursor.execute("DETACH DATABASE master")
+
+    return jsonify({'date': date, 'data': results})
+
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

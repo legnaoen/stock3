@@ -141,6 +141,85 @@
             color: #007bff;
             text-decoration: underline;
         }
+
+        /* 추천 카드 스타일 */
+        .recommendation-card {
+            border: 1px solid #ddd;
+            border-radius: 8px;
+            padding: 16px;
+            margin-bottom: 16px;
+            background-color: #fff;
+            box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+        }
+        .rec-card-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            border-bottom: 1px solid #eee;
+            padding-bottom: 8px;
+            margin-bottom: 12px;
+        }
+        .rec-card-title .type-badge {
+            background-color: #e9ecef;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.8em;
+            color: #495057;
+            vertical-align: middle;
+        }
+        .rec-card-title .name {
+            font-size: 1.2em;
+            font-weight: bold;
+            margin-left: 8px;
+            vertical-align: middle;
+        }
+        .rec-card-score {
+            font-size: 1.4em;
+            font-weight: bold;
+            color: #007bff;
+        }
+        .rec-card-score .unit {
+            font-size: 0.7em;
+            color: #6c757d;
+        }
+        .rec-card-body .opinion-badge {
+            display: inline-block;
+            padding: 4px 12px;
+            border-radius: 20px;
+            font-weight: bold;
+            font-size: 0.9em;
+            color: white;
+            margin-bottom: 12px;
+        }
+        .opinion-badge.strong-buy { background-color: #c82333; }
+        .opinion-badge.buy { background-color: #218838; }
+        .rec-card-body .leader-title {
+            font-size: 0.9em;
+            font-weight: bold;
+            color: #343a40;
+        }
+        .rec-card-body .leader-stock-chip {
+            display: inline-block;
+            margin-left: 5px;
+            background-color: #f8f9fa;
+            border: 1px solid #ddd;
+            padding: 3px 10px;
+            border-radius: 4px;
+            font-size: 0.9em;
+            text-decoration: none;
+            color: #333;
+            margin-top: 5px;
+        }
+        .rec-card-footer {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            font-size: 0.9em;
+            color: #6c757d;
+            margin-top: 16px;
+            padding-top: 8px;
+            border-top: 1px solid #eee;
+        }
     </style>
 </head>
 <body>
@@ -173,7 +252,10 @@
         <!-- 탭 메뉴 -->
         <ul class="nav nav-tabs" id="performanceTabs">
             <li class="nav-item">
-                <a class="nav-link active" data-bs-toggle="tab" href="#mixed">업종&테마</a>
+                <a class="nav-link active" data-bs-toggle="tab" href="#recommendation">추천</a>
+            </li>
+            <li class="nav-item">
+                <a class="nav-link" data-bs-toggle="tab" href="#mixed">업종&테마</a>
             </li>
             <li class="nav-item">
                 <a class="nav-link" data-bs-toggle="tab" href="#industry">업종</a>
@@ -191,8 +273,15 @@
 
         <!-- 탭 내용 -->
         <div class="tab-content mt-3">
+            <!-- 추천 탭 -->
+            <div class="tab-pane fade show active" id="recommendation" role="tabpanel">
+                <div id="recommendationData">
+                    <!-- 추천 카드가 여기에 동적으로 추가됩니다 -->
+                </div>
+            </div>
+
             <!-- 통합 탭 -->
-            <div class="tab-pane fade show active" id="mixed">
+            <div class="tab-pane fade" id="mixed">
                 <table class="table table-hover">
                     <thead>
                         <tr>
@@ -565,6 +654,9 @@
                         break;
                     case 'rebound':
                         loadReboundData();
+                        break;
+                    case 'recommendation':
+                        loadRecommendationData();
                         break;
                 }
             });
@@ -963,6 +1055,61 @@
                     filterTableByTheme(type);
                 });
             });
+        }
+
+        function loadRecommendationData() {
+            fetch('/api/recommendations')
+                .then(response => response.json())
+                .then(data => {
+                    const container = document.getElementById('recommendationData');
+                    container.innerHTML = ''; // 기존 내용 초기화
+                    if (data.data.length === 0) {
+                        container.innerHTML = '<div class="alert alert-info">추천 데이터가 없습니다.</div>';
+                        return;
+                    }
+
+                    data.data.forEach(item => {
+                        const opinionClass = item.opinion.toLowerCase().replace('_', '-');
+                        const changeRateClass = item.change_rate > 0 ? 'change-rate-up' : 'change-rate-down';
+                        const changeRateSign = item.change_rate > 0 ? '+' : '';
+
+                        const leaderStockChips = item.leader_stocks.map(stock => 
+                            `<a href="/stock_detail?code=${stock.code}" class="leader-stock-chip" target="_blank">${stock.name}</a>`
+                        ).join('');
+
+                        const card = `
+                            <div class="recommendation-card">
+                                <div class="rec-card-header">
+                                    <div class="rec-card-title">
+                                        <span class="type-badge">${item.type === 'theme' ? '테마' : '업종'}</span>
+                                        <span class="name">${item.name}</span>
+                                    </div>
+                                    <div class="rec-card-score">${item.score.toFixed(2)}<span class="unit">점</span></div>
+                                </div>
+                                <div class="rec-card-body">
+                                    <span class="opinion-badge ${opinionClass}">${item.opinion.replace('_', ' ')}</span>
+                                    <div class="mt-2">
+                                        <strong class="leader-title">핵심 주도주:</strong>
+                                        ${leaderStockChips}
+                                    </div>
+                                </div>
+                                <div class="rec-card-footer">
+                                    <div>
+                                        <span>등락률: <span class="${changeRateClass}">${changeRateSign}${item.change_rate.toFixed(2)}%</span></span>
+                                        <span class="ms-3">거래대금: ${(item.trading_value / 100000000).toFixed(0)}억</span>
+                                    </div>
+                                    <a href="/sector_detail?type=${item.type}&id=${item.id}" target="_blank">상세 분석 보기 &gt;</a>
+                                </div>
+                            </div>
+                        `;
+                        container.innerHTML += card;
+                    });
+                })
+                .catch(error => {
+                    console.error('추천 데이터 로딩 중 오류 발생:', error);
+                    const container = document.getElementById('recommendationData');
+                    container.innerHTML = '<div class="alert alert-danger">데이터를 불러오는 중 오류가 발생했습니다.</div>';
+                });
         }
     </script>
 </body>

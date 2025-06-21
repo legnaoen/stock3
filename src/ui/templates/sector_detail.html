@@ -218,28 +218,35 @@
             const res = await fetch(`/api/sector/${type}/${id}/chart?days=${days}&metric=${metric}`);
             const data = await res.json();
             const ctx = document.getElementById('sectorChart').getContext('2d');
+
             if(window.sectorChartObj) window.sectorChartObj.destroy();
+
             let chartData, chartLabels, chartUnit = data.unit || '';
-            if(data.values && data.values.length > 1) {
+            let chartLabel = data.label || '차트';
+
+            if(data.values && data.values.length > 0) {
                 chartLabels = data.dates;
+                chartData = data.values; // 기본적으로 API에서 받은 데이터 사용
+
+                // '변동률' 모드이고, '등락률' 지표가 아닐 때만 % 변환
                 if(mode === 'percent' && metric !== 'price_change_ratio') {
-                    // 기준일 대비 % 변동률로 변환
-                    const base = data.values[0];
-                    chartData = data.values.map(v => base ? ((v - base) / base * 100) : 0);
+                    const base = chartData[0];
+                    chartData = chartData.map(v => base ? ((v - base) / base * 100) : 0);
                     chartUnit = '%';
-                } else {
-                    chartData = data.values;
+                    chartLabel = data.label + ' 변동률(%)';
                 }
             } else {
+                // 데이터가 없을 경우
                 chartData = Array(Number(days)).fill(null);
                 chartLabels = Array(Number(days)).fill('');
             }
+
             window.sectorChartObj = new Chart(ctx, {
                 type: 'line',
                 data: {
                     labels: chartLabels,
                     datasets: [{
-                        label: mode === 'percent' && metric !== 'price_change_ratio' ? (data.label + ' 변동률(%)') : (data.label || '차트'),
+                        label: chartLabel,
                         data: chartData,
                         borderColor: '#007bff',
                         backgroundColor: 'rgba(0,123,255,0.1)',
