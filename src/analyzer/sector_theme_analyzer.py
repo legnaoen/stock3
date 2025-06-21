@@ -3,6 +3,7 @@ import sys
 import sqlite3
 from datetime import datetime
 from typing import List, Dict, Tuple
+from src.utils.market_time import get_market_date
 
 # venv 활성화 체크
 if sys.prefix == sys.base_prefix:
@@ -11,10 +12,6 @@ if sys.prefix == sys.base_prefix:
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))
-
-def get_today() -> str:
-    """오늘 날짜를 YYYY-MM-DD 형식으로 반환"""
-    return datetime.today().strftime('%Y-%m-%d')
 
 def init_performance_tables():
     """성과 테이블 초기화"""
@@ -60,7 +57,7 @@ def get_industry_performance(date: str = None, save_to_db: bool = True) -> List[
         업종별 등락률 리스트 (시가총액 가중평균 기준 내림차순 정렬)
     """
     if not date:
-        date = get_today()
+        date = get_market_date()
         
     query = """
     WITH industry_stats AS (
@@ -153,7 +150,7 @@ def get_theme_performance(date: str = None, save_to_db: bool = True) -> List[Dic
         테마별 등락률 리스트 (시가총액 가중평균 기준 내림차순 정렬)
     """
     if not date:
-        date = get_today()
+        date = get_market_date()
         
     query = """
     WITH theme_stats AS (
@@ -250,7 +247,7 @@ def get_top_stocks_by_sector(sector_id: int, sector_type: str, date: str = None,
         상위 종목 리스트
     """
     if not date:
-        date = get_today()
+        date = get_market_date()
         
     if sector_type not in ['industry', 'theme']:
         raise ValueError("sector_type must be either 'industry' or 'theme'")
@@ -292,10 +289,12 @@ def get_top_stocks_by_sector(sector_id: int, sector_type: str, date: str = None,
     ]
 
 def update_daily_performance(date: str = None):
-    """업종과 테마의 일간 성과를 계산하고 DB에 저장"""
+    """지정된 날짜 또는 최근 거래일의 모든 업종/테마 성과를 업데이트"""
     if not date:
-        date = get_today()
-        
+        date = get_market_date()
+    
+    print(f"[{date}] 기준 업종/테마 일일 성과 업데이트 시작...")
+    
     init_performance_tables()  # 테이블이 없으면 생성
     
     try:
@@ -312,18 +311,17 @@ def update_daily_performance(date: str = None):
         raise
 
 if __name__ == "__main__":
-    # 테스트 코드
-    today = get_today()
-    
-    # DB 테이블 초기화
     init_performance_tables()
+
+    target_date = get_market_date()
+    update_daily_performance(target_date)
     
-    print("\n=== 업종별 등락률 ===")
-    industries = get_industry_performance(today, save_to_db=True)
-    for ind in industries[:5]:
-        print(f"{ind['name']}: {ind['change_rate']}% (상승 {ind['up_stocks']}, 하락 {ind['down_stocks']}")
+    print(f"\n[{target_date}] 기준 상위 5개 업종:")
+    top_industries = get_industry_performance(target_date, save_to_db=False)
+    for i in top_industries[:5]:
+        print(f"- {i['name']}: {i['change_rate']}% (상승 {i['up_stocks']}, 하락 {i['down_stocks']}")
         
-    print("\n=== 테마별 등락률 ===")
-    themes = get_theme_performance(today, save_to_db=True)
-    for theme in themes[:5]:
-        print(f"{theme['name']}: {theme['change_rate']}% (상승 {theme['up_stocks']}, 하락 {theme['down_stocks']}") 
+    print(f"\n[{target_date}] 기준 상위 5개 테마:")
+    top_themes = get_theme_performance(target_date, save_to_db=False)
+    for t in top_themes[:5]:
+        print(f"- {t['name']}: {t['change_rate']}% (상승 {t['up_stocks']}, 하락 {t['down_stocks']}") 

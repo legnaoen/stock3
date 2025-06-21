@@ -61,7 +61,8 @@ def fetch_daily_stocks(date_str: str = None):
             check_date = datetime.now() - timedelta(days=i)
             check_date_str = check_date.strftime("%Y%m%d")
             df = stock.get_market_ohlcv(check_date_str)
-            if not df.empty:
+            # 거래가 있었는지 확인 (거래량 합계 체크)
+            if not df.empty and df['거래량'].sum() > 0:
                 date_str = check_date.strftime("%Y-%m-%d")
                 break
         else:

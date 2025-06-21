@@ -11,20 +11,17 @@ if sys.prefix == sys.base_prefix:
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.logger import setup_logger
+from utils.market_time import get_market_date
 
 logger = setup_logger()
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))
 
-def get_today() -> str:
-    """오늘 날짜를 YYYY-MM-DD 형식으로 반환"""
-    return datetime.today().strftime('%Y-%m-%d')
-
 def get_sector_info(sector_type: str, sector_id: int, date: str = None) -> Dict:
     """테마/업종 기본 정보 조회"""
     if not date:
-        date = get_today()
+        date = get_market_date()
         
     if sector_type not in ['theme', 'industry']:
         raise ValueError("sector_type must be either 'theme' or 'industry'")
@@ -89,7 +86,7 @@ def get_sector_info(sector_type: str, sector_id: int, date: str = None) -> Dict:
 def get_sector_stocks(sector_type: str, sector_id: int, date: str = None) -> List[Dict]:
     """테마/업종에 속한 종목 리스트와 상세 정보 조회 (주가 데이터가 없어도 종목은 항상 표시)"""
     if not date:
-        date = get_today()
+        date = get_market_date()
         
     if sector_type not in ['theme', 'industry']:
         raise ValueError("sector_type must be either 'theme' or 'industry'")
@@ -133,15 +130,16 @@ if __name__ == "__main__":
     # 테스트 코드
     test_theme_id = 1  # 테스트용 테마 ID
     test_industry_id = 1  # 테스트용 업종 ID
+    target_date = get_market_date()
     
-    print("\n=== 테마 정보 테스트 ===")
-    theme_info = get_sector_info('theme', test_theme_id)
+    print(f"\n=== [{target_date}] 기준 테마 정보 테스트 ===")
+    theme_info = get_sector_info('theme', test_theme_id, target_date)
     if theme_info:
         print(f"테마명: {theme_info['name']}")
         print(f"등락률: {theme_info['price_change_ratio']}%")
         print(f"종목수: {theme_info['total_stocks']} (상승 {theme_info['up_stocks']}, 하락 {theme_info['down_stocks']})")
     
-    print("\n=== 테마 종목 리스트 테스트 ===")
-    theme_stocks = get_sector_stocks('theme', test_theme_id)
+    print(f"\n=== [{target_date}] 기준 테마 종목 리스트 테스트 ===")
+    theme_stocks = get_sector_stocks('theme', test_theme_id, target_date)
     for stock in theme_stocks[:5]:  # 상위 5개만 출력
         print(f"{stock['stock_name']}: {stock['price_change_ratio']}%") 

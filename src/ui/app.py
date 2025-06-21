@@ -42,10 +42,17 @@ def market_status():
 @app.route('/api/performance/mixed')
 def get_mixed_performance():
     """업종과 테마를 통합한 상위 30개 데이터"""
-    date = get_market_date()  # 08:30 기준으로 당일/전일 결정
     
     with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
         cursor = perf_conn.cursor()
+        
+        # DB에서 가장 최근 데이터 날짜를 기준으로 설정
+        cursor.execute("SELECT MAX(date) FROM industry_daily_performance")
+        date_row = cursor.fetchone()
+        if not date_row or not date_row[0]:
+            return jsonify({'data': [], 'date': 'N/A', 'market_status': get_market_status()})
+        date = date_row[0]
+
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
         
         query = """
@@ -158,13 +165,25 @@ def get_mixed_performance():
 @app.route('/api/performance/industry')
 def get_industry_performance():
     """업종별 상위 30개 데이터"""
-    date = get_market_date()
-    yesterday = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
-    
     with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
         cursor = perf_conn.cursor()
+
+        # DB에서 가장 최근 날짜와 그 이전 날짜를 조회
+        cursor.execute("SELECT date FROM industry_daily_performance GROUP BY date ORDER BY date DESC LIMIT 2")
+        dates = cursor.fetchall()
+        
+        if len(dates) == 0:
+            return jsonify({'data': [], 'date': 'N/A', 'market_status': get_market_status()})
+        
+        latest_date = dates[0][0]
+        yesterday = dates[1][0] if len(dates) > 1 else None
+
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
         
+        # DailyStocks에서 가장 최신 날짜 찾기
+        cursor.execute("SELECT MAX(date) FROM master.DailyStocks")
+        latest_daily_stock_date = cursor.fetchone()[0]
+
         query = """
         WITH today AS (
             SELECT i.industry_id, i.price_change_ratio, i.rank,
@@ -174,7 +193,7 @@ def get_industry_performance():
                        FROM master.industry_stock_mapping m2
                        JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
                        WHERE m2.industry_id = m.industry_id
-                       AND d2.date = ?
+                       AND d2.date = ? 
                        AND d2.price_change_ratio > 0
                    ) as up_stocks,
                    (
@@ -182,7 +201,7 @@ def get_industry_performance():
                        FROM master.industry_stock_mapping m2
                        JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
                        WHERE m2.industry_id = m.industry_id
-                       AND d2.date = ?
+                       AND d2.date = ? 
                        AND d2.price_change_ratio < 0
                    ) as down_stocks,
                    (
@@ -190,7 +209,7 @@ def get_industry_performance():
                        FROM master.industry_stock_mapping m2
                        JOIN master.DailyStocks d2 ON m2.stock_code = d2.stock_code
                        WHERE m2.industry_id = m.industry_id
-                       AND d2.date = ?
+                       AND d2.date = ? 
                        AND d2.price_change_ratio = 0
                    ) as unchanged_stocks,
                    i.market_cap,
@@ -223,7 +242,7 @@ def get_industry_performance():
         ORDER BY t.rank ASC
         """
         
-        cursor.execute(query, (date, date, date, date, yesterday))
+        cursor.execute(query, (latest_daily_stock_date, latest_daily_stock_date, latest_daily_stock_date, latest_date, yesterday))
         
         results = []
         for row in cursor.fetchall():
@@ -254,19 +273,31 @@ def get_industry_performance():
         
         return jsonify({
             'market_status': get_market_status(),
-            'date': date,
+            'date': latest_date,
             'data': results
         })
 
 @app.route('/api/performance/theme')
 def get_theme_performance():
     """테마별 상위 30개 데이터"""
-    date = get_market_date()
-    yesterday = (datetime.strptime(date, '%Y-%m-%d') - timedelta(days=1)).strftime('%Y-%m-%d')
-    
     with sqlite3.connect(THEME_INDUSTRY_DB) as perf_conn:
         cursor = perf_conn.cursor()
+
+        # DB에서 가장 최근 날짜와 그 이전 날짜를 조회
+        cursor.execute("SELECT date FROM theme_daily_performance GROUP BY date ORDER BY date DESC LIMIT 2")
+        dates = cursor.fetchall()
+        
+        if len(dates) == 0:
+            return jsonify({'data': [], 'date': 'N/A', 'market_status': get_market_status()})
+        
+        latest_date = dates[0][0]
+        yesterday = dates[1][0] if len(dates) > 1 else None
+        
         cursor.execute("ATTACH DATABASE ? AS master", (DB_PATH,))
+
+        # DailyStocks에서 가장 최신 날짜 찾기
+        cursor.execute("SELECT MAX(date) FROM master.DailyStocks")
+        latest_daily_stock_date = cursor.fetchone()[0]
         
         query = """
         WITH today AS (
@@ -326,7 +357,7 @@ def get_theme_performance():
         ORDER BY t.rank ASC
         """
         
-        cursor.execute(query, (date, date, date, date, yesterday))
+        cursor.execute(query, (latest_daily_stock_date, latest_daily_stock_date, latest_daily_stock_date, latest_date, yesterday))
         
         results = []
         for row in cursor.fetchall():
@@ -357,7 +388,7 @@ def get_theme_performance():
         
         return jsonify({
             'market_status': get_market_status(),
-            'date': date,
+            'date': latest_date,
             'data': results
         })
 
@@ -366,9 +397,16 @@ def get_surge_performance():
     """
     상위 20개 급등주 데이터 + 종목별 최신 뉴스 3개 포함
     """
-    date = get_market_date()
     with sqlite3.connect(DB_PATH) as conn:
         cursor = conn.cursor()
+        
+        # DailyStocks에서 가장 최신 날짜 찾기
+        cursor.execute("SELECT MAX(date) FROM DailyStocks")
+        latest_date = cursor.fetchone()[0]
+
+        if not latest_date:
+            return jsonify({'market_status': get_market_status(), 'date': 'N/A', 'data': []})
+
         query = '''
         WITH stock_industries AS (
             SELECT ism.stock_code, im.industry_name
@@ -383,7 +421,7 @@ def get_surge_performance():
         ORDER BY d.price_change_ratio DESC
         LIMIT 20
         '''
-        cursor.execute(query, (date,))
+        cursor.execute(query, (latest_date,))
         rows = cursor.fetchall()
         results = []
         for row in rows:
@@ -411,7 +449,7 @@ def get_surge_performance():
                 'theme': ','.join([t['theme_name'] for t in get_themes_for_stock(stock_code)]),
                 'news': news_list
             })
-        return jsonify({'market_status': get_market_status(), 'date': date, 'data': results})
+        return jsonify({'market_status': get_market_status(), 'date': latest_date, 'data': results})
 
 @app.route('/api/performance/rebound')
 def get_rebound_performance():
@@ -510,8 +548,15 @@ def get_rebound_performance():
 @app.route('/api/refresh/quick', methods=['POST'])
 def refresh_quick():
     def job():
+        # 1. 기존 동작: 시세 수집
         os.system('python3 -m src.collector.krx_collector')
+        # 2. 기존 동작: 주도주 분석
         os.system('python3 -m src.analyzer.sector_theme_analyzer')
+        # 3. 추가 동작: 모멘텀 지표 계산
+        os.system('python3 -m src.analyzer.momentum_analyzer')
+        # 4. 추가 동작: 최종 투자 의견 생성
+        os.system('python3 -m src.analyzer.investment_analyzer')
+
     threading.Thread(target=job).start()
     return '', 204
 
