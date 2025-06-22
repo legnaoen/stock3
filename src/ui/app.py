@@ -14,6 +14,7 @@ from src.analyzer.financial_statement_analyzer import FinancialStatementAnalyzer
 import pandas as pd
 import numpy as np
 import subprocess
+from scripts.optimize_momentum_weights import factors_base, factors_optional
 
 app = Flask(__name__)
 app.register_blueprint(sector_api)
@@ -165,7 +166,7 @@ def get_mixed_performance():
             stock_name_map = dict(cursor.fetchall())
         results = []
         for row in rows:
-            print('[MIXED API ROW]', row)  # 진단용 로그 추가
+            print('[MIXED API ROW]', row)  # 진단용 로그 복구
             codes = row[8].split(',') if row[8] else []
             leader_names = [stock_name_map.get(code, code) for code in codes]
             results.append({
@@ -289,6 +290,7 @@ def get_industry_performance():
             stock_name_map = dict(cursor.fetchall())
         results = []
         for row in rows:
+            print('[MIXED API ROW]', row)  # 진단용 로그 복구
             codes = row[8].split(',') if row[8] else []
             leader_names = [stock_name_map.get(code, code) for code in codes]
             current_rank = row[11]
@@ -305,8 +307,8 @@ def get_industry_performance():
                 'unchanged_stocks': row[6],
                 'trading_value': row[7],
                 'leader_stocks': leader_names,
-                'trend_score': row[9],
-                'opinion': row[10],
+                'trend_score': row[8],
+                'opinion': row[9],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
@@ -422,6 +424,7 @@ def get_theme_performance():
             stock_name_map = dict(cursor.fetchall())
         results = []
         for row in rows:
+            print('[MIXED API ROW]', row)  # 진단용 로그 복구
             codes = row[8].split(',') if row[8] else []
             leader_names = [stock_name_map.get(code, code) for code in codes]
             current_rank = row[11]
@@ -429,7 +432,7 @@ def get_theme_performance():
             rank_change = None if prev_rank is None else prev_rank - current_rank
             
             results.append({
-                'type': 'theme',
+                'type': row[0],
                 'id': row[1],
                 'name': row[2],
                 'change_rate': row[3],
@@ -438,8 +441,8 @@ def get_theme_performance():
                 'unchanged_stocks': row[6],
                 'trading_value': row[7],
                 'leader_stocks': leader_names,
-                'trend_score': row[9],
-                'opinion': row[10],
+                'trend_score': row[8],
+                'opinion': row[9],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
@@ -1139,7 +1142,7 @@ def get_recommendations():
         # 최종 결과 데이터 조립
         results = []
         for row in rows:
-            print('[MIXED API ROW]', row)  # 진단용 로그 추가
+            print('[MIXED API ROW]', row)  # 진단용 로그 복구
             codes = row[8].split(',') if row[8] else []
             leader_names = [{'code': code, 'name': stock_name_map.get(code, code)} for code in codes]
             results.append({
@@ -1284,6 +1287,10 @@ def momentum_optimization():
             meta['데이터 구간'] = f"{min_date} ~ {max_date} ({n_days}거래일)"
     except Exception as e:
         meta['데이터 구간'] = '-'
+    # 사용 지표 분리
+    meta['factors_base'] = list(factors_base)
+    meta['factors_optional'] = list(factors_optional.keys())
+    meta['selected_factors'] = [k for k,v in factors_optional.items() if v]
     if os.path.exists(csv_path):
         df = pd.read_csv(csv_path)
         # 2. 메타데이터
@@ -1301,7 +1308,6 @@ def momentum_optimization():
         # 4. 상위 5개 조합
         top_rows = df_sorted.head(5).to_dict(orient='records')
         # 5. 현재/추천 가중치 비교
-        from scripts.optimize_momentum_weights import factors_base
         weight_compare = []
         for k in meta['사용 지표']:
             base = 1.0/len(factors_base) if k in factors_base else 0.0
@@ -1325,9 +1331,23 @@ def momentum_optimization():
 
 @app.route('/momentum-optimization/run', methods=['POST'])
 def run_momentum_optimization():
-    # 백엔드에서 최적화 스크립트 실행
+    from scripts.optimize_momentum_weights import factors_base, factors_optional
+    selected = request.form.get('selected_factors','')
+    selected_list = [f for f in selected.split(',') if f]
+    # factors_optional dict를 선택값에 맞게 True/False로 재구성
+    import importlib.util
+    import sys
+    import os
     script_path = os.path.join(os.path.dirname(__file__), '../../scripts/optimize_momentum_weights.py')
+    spec = importlib.util.spec_from_file_location('optimize_momentum_weights', script_path)
+    omw = importlib.util.module_from_spec(spec)
+    sys.modules['optimize_momentum_weights'] = omw
+    spec.loader.exec_module(omw)
+    for k in omw.factors_optional.keys():
+        omw.factors_optional[k] = (k in selected_list)
+    # 백엔드에서 최적화 스크립트 실행
     try:
+        import subprocess
         subprocess.run(['python', script_path], check=True)
         flash('최적화 테스트가 성공적으로 완료되었습니다.', 'success')
     except Exception as e:

@@ -7,9 +7,10 @@ from typing import List, Dict, Tuple
 from src.utils.market_time import get_market_date
 
 # venv 활성화 체크
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        exit(1)
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
 THEME_INDUSTRY_DB = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db'))

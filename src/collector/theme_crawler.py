@@ -15,9 +15,10 @@ def get_today():
     return datetime.today().strftime('%Y-%m-%d')
 
 # venv 활성화 체크
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        exit(1)
 
 BASE_URL = "https://finance.naver.com"
 THEME_URL = f"{BASE_URL}/sise/theme.naver"

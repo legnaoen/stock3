@@ -9,9 +9,10 @@ from selenium.webdriver.chrome.options import Options
 from bs4 import BeautifulSoup
 
 # venv 활성화 체크
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        exit(1)
 
 # 네이버 금융 업종별 리스트/소속 종목 크롤링 및 DB 저장 모듈
 # - 목적: 업종별 리스트 및 소속 종목 크롤링, DB 저장

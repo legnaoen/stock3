@@ -5,9 +5,10 @@ from datetime import datetime
 from typing import List, Dict
 
 # venv 활성화 체크
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        exit(1)
 
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from utils.logger import setup_logger

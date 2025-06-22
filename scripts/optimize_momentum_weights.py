@@ -23,11 +23,12 @@ factors_base = [
 ]
 # ON/OFF 가능한 확장 factor
 factors_optional = {
+    'volume_momentum_1d': False,
     'volume_momentum_3d': False,
     'volume_momentum_5d': False,
     'trend_score': False,
-    # 'leader_count': False,  # 필요시 추가
-    # 'leader_momentum': False,  # 필요시 추가
+    'leader_count': False,
+    'leader_momentum': False,
 }
 
 def get_active_factors():

@@ -9,9 +9,10 @@ import pandas as pd
 # - 사용법: fetch_all_stocks, fetch_daily_stocks, fill_missing_history 등 함수 활용
 
 # venv 활성화 체크 (운영 안전)
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        sys.exit(1)
 
 try:
     from pykrx import stock

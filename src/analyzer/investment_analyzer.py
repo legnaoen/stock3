@@ -8,9 +8,10 @@ from datetime import datetime
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../..')))
 
 # venv 활성화 체크
-if sys.prefix == sys.base_prefix:
-    print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
-    sys.exit(1)
+if os.name != 'nt':
+    if not hasattr(sys, 'base_prefix') or sys.prefix == sys.base_prefix:
+        print("[ERROR] 반드시 venv(가상환경)에서 실행해야 합니다.")
+        exit(1)
 
 # 모멘텀/RSI 등 지표 기반 종합 투자 의견(STRONG_BUY/BUY/HOLD/SELL) 자동 생성 모듈
 # - 목적: momentum_analysis의 기초 지표를 바탕으로 종합 추세 점수 및 투자 의견 생성/DB 저장
