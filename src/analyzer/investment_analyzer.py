@@ -17,6 +17,27 @@ if os.name != 'nt':
 # - 목적: momentum_analysis의 기초 지표를 바탕으로 종합 추세 점수 및 투자 의견 생성/DB 저장
 # - 사용법: InvestmentAnalyzer 클래스 활용
 
+def load_weights_from_csv(csv_path='results/momentum_weights_active.csv'):
+    """
+    가중치 CSV(가로형)에서 is_active=1, 최신 timestamp 세트의 가중치를 딕셔너리로 반환
+    """
+    df = pd.read_csv(csv_path)
+    # is_active가 int가 아닐 경우를 대비해 변환
+    if df['is_active'].dtype != int:
+        df['is_active'] = df['is_active'].astype(int)
+    active = df[df['is_active'] == 1]
+    if active.empty:
+        raise ValueError('활성화된(is_active=1) 가중치 세트가 없습니다.')
+    # 최신 timestamp
+    latest_time = active['timestamp'].max()
+    latest_set = active[active['timestamp'] == latest_time]
+    if isinstance(latest_set, pd.DataFrame):
+        latest_set = latest_set.iloc[0]
+    # factor 컬럼만 추출
+    factor_cols = [col for col in df.columns if col not in ['timestamp','tag','is_active','comment']]
+    weights = {col: float(latest_set[col]) for col in factor_cols}
+    return weights
+
 class InvestmentAnalyzer:
     """
     기초 분석 데이터(모멘텀, RSI 등)를 바탕으로 종합적인 투자 의견을 생성하는 클래스.
@@ -49,7 +70,12 @@ class InvestmentAnalyzer:
         query = "SELECT * FROM momentum_analysis WHERE date = ?"
         try:
             with self._get_theme_db_connection() as conn:
-                df = pd.read_sql_query(query, conn, params=(date,))
+                df = pd.read_sql_query(query, conn, params=[date])
+            print(f"[fetch_momentum_data] {date} row 수: {len(df)}")
+            if not df.empty:
+                for col in ['target_id','target_type','trend_score','price_momentum_1d','leader_momentum']:
+                    if col in df.columns:
+                        print(f"  {col} 결측치: {df[col].isna().mean()*100:.1f}% (샘플: {df[col].head(3).tolist()})")
             if df.empty:
                 print(f"[WARN] {date}에 대한 모멘텀 데이터가 없습니다.")
             return df
@@ -62,48 +88,69 @@ class InvestmentAnalyzer:
         종합 추세 강도 점수(trend_score)를 계산합니다.
         점수는 0~100 사이 값으로 정규화될 수 있으나, 여기서는 가중치 합으로 계산합니다.
         """
-        print("[INFO] 종합 추세 강도 점수 계산 중...")
+        print("[calculate_trend_score] trend_score 계산 중...")
         df.fillna(0, inplace=True)
 
+        # CSV에서 가중치 로딩
+        weights = load_weights_from_csv()
+
+        # 기존 하드코딩(백업)
+        # price_score = (
+        #     df['price_momentum_1d'] * 0.2 +
+        #     df['price_momentum_3d'] * 0.3 +
+        #     df['price_momentum_5d'] * 0.3 +
+        #     df['price_momentum_10d'] * 0.2
+        # )
+        # volume_score = (
+        #     df['volume_momentum_1d'] * 0.3 +
+        #     df['volume_momentum_3d'] * 0.4 +
+        #     df['volume_momentum_5d'] * 0.3
+        # )
+        # leader_score = (
+        #     df['leader_momentum'] * 0.6 +
+        #     (df['leader_count'] / 5).clip(0, 1) * 0.4
+        # )
+        # rsi_score = (df['rsi_value'] - 50) * 0.1
+
         price_score = (
-            df['price_momentum_1d'] * 0.2 +
-            df['price_momentum_3d'] * 0.3 +
-            df['price_momentum_5d'] * 0.3 +
-            df['price_momentum_10d'] * 0.2
+            df['price_momentum_1d'] * weights['price_momentum_1d'] +
+            df['price_momentum_3d'] * weights['price_momentum_3d'] +
+            df['price_momentum_5d'] * weights['price_momentum_5d'] +
+            df['price_momentum_10d'] * weights['price_momentum_10d']
         )
-        
         volume_score = (
-            df['volume_momentum_1d'] * 0.3 +
-            df['volume_momentum_3d'] * 0.4 +
-            df['volume_momentum_5d'] * 0.3
+            df['volume_momentum_1d'] * weights['volume_momentum_1d'] +
+            df['volume_momentum_3d'] * weights['volume_momentum_3d'] +
+            df['volume_momentum_5d'] * weights['volume_momentum_5d']
         )
-        
-        # 주도주 모멘텀과 수에 가중치를 부여.
         leader_score = (
-            df['leader_momentum'] * 0.6 +
-            (df['leader_count'] / 5).clip(0, 1) * 0.4 # 주도주는 최대 5개이므로 5로 나눔
+            df['leader_momentum'] * weights['leader_momentum'] +
+            (df['leader_count'] / 5).clip(0, 1) * weights['leader_count']
         )
-        
-        rsi_score = (df['rsi_value'] - 50) * 0.1
-        
+        rsi_score = (df['rsi_value'] - 50) * weights['rsi_value']
+
         df['trend_score'] = (price_score * 0.4) + (volume_score * 0.3) + (leader_score * 0.3) + rsi_score
         df['trend_score'] = df['trend_score'].clip(0, 100)
-        
-        print("[INFO] 추세 점수 계산 완료.")
+        print(f"[calculate_trend_score] trend_score 결측치: {df['trend_score'].isna().mean()*100:.1f}% (샘플: {df['trend_score'].head(3).tolist()})")
+        print(f"[calculate_trend_score] 통계: min={df['trend_score'].min()}, max={df['trend_score'].max()}, mean={df['trend_score'].mean():.2f}")
         return df
 
     def generate_opinions(self, df: pd.DataFrame) -> pd.DataFrame:
         """
         분석 데이터를 기반으로 투자 의견을 생성합니다.
         """
-        print("[INFO] 투자 의견 생성 중...")
+        print("[generate_opinions] 투자 의견 생성 중...")
         def get_opinion(score):
             if score >= 80: return 'STRONG_BUY'
             elif score >= 60: return 'BUY'
             elif score >= 40: return 'HOLD'
             else: return 'SELL'
         df['opinion_type'] = df['trend_score'].apply(get_opinion)
-        print("[INFO] 투자 의견 생성 완료.")
+        print("[generate_opinions] 등급별 분포:")
+        for op in ['STRONG_BUY','BUY','HOLD','SELL']:
+            print(f"  {op}: {(df['opinion_type']==op).sum()}개")
+        print("[generate_opinions] 샘플:")
+        print(df[['target_id','trend_score','opinion_type']].head(3))
         return df
 
     def save_analysis_results(self, df: pd.DataFrame, date: str):
@@ -116,7 +163,7 @@ class InvestmentAnalyzer:
             print("[WARN] 저장할 분석 데이터가 없습니다.")
             return
 
-        print(f"[INFO] {len(df)}개의 trend_score를 momentum_analysis 테이블에 업데이트합니다...")
+        print(f"[save_analysis_results] {len(df)}개 row 저장 시도...")
         try:
             with self._get_theme_db_connection() as conn:
                 cursor = conn.cursor()
@@ -149,21 +196,17 @@ class InvestmentAnalyzer:
         """
         지정된 날짜에 대한 투자 의견 분석을 수행합니다.
         """
-        print(f"--- {date} 투자 의견 분석 시작 ---")
-        
+        print(f"\n{'='*30}\n--- {date} 투자 의견 분석 시작 ---")
         analysis_df = self.fetch_momentum_data(date)
         if analysis_df.empty:
             print(f"[FAIL] {date} 분석을 중단합니다.")
             return
-
         print(f"[INFO] {date}의 모멘텀 데이터 {len(analysis_df)}건 로딩 완료.")
-        
         analysis_df = self.calculate_trend_score(analysis_df)
         final_df = self.generate_opinions(analysis_df)
         self.save_analysis_results(final_df, date)
-
-        print("\n[ 최종 분석 요약 ]")
-        print(final_df[['target_id', 'target_type', 'trend_score', 'opinion_type']].sort_values(by='trend_score', ascending=False).head(10))
+        print(f"[analyze] 최종 샘플:\n{final_df[['target_id','trend_score','opinion_type']].head(5)}")
+        print(f"{'='*30}\n")
 
 
 if __name__ == '__main__':

@@ -17,6 +17,7 @@ import subprocess
 from scripts.optimize_momentum_weights import factors_base, factors_optional
 
 app = Flask(__name__)
+app.secret_key = 'momentum-2025-dev-key'
 app.register_blueprint(sector_api)
 
 DB_PATH = os.path.abspath(os.path.join(os.path.dirname(__file__), '../../db/stock_master.db'))
@@ -307,8 +308,8 @@ def get_industry_performance():
                 'unchanged_stocks': row[6],
                 'trading_value': row[7],
                 'leader_stocks': leader_names,
-                'trend_score': row[8],
-                'opinion': row[9],
+                'trend_score': row[9],
+                'opinion': row[10],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
@@ -441,8 +442,8 @@ def get_theme_performance():
                 'unchanged_stocks': row[6],
                 'trading_value': row[7],
                 'leader_stocks': leader_names,
-                'trend_score': row[8],
-                'opinion': row[9],
+                'trend_score': row[9],
+                'opinion': row[10],
                 'rank': {
                     'current': current_rank,
                     'prev': prev_rank,
