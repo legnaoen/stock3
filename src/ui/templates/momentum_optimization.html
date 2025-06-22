@@ -131,14 +131,22 @@
         <div class="table-responsive">
             <table class="table table-bordered table-sm">
                 <thead>
-                    <tr><th>구분</th><th>5일 BUY 적중률(%)</th><th>5일 BUY 평균수익률(%)</th></tr>
+                    <tr>
+                        <th>기간</th>
+                        <th>현재 BUY 적중률(%)</th>
+                        <th>추천 BUY 적중률(%)</th>
+                        <th>현재 BUY 평균수익률(%)</th>
+                        <th>추천 BUY 평균수익률(%)</th>
+                    </tr>
                 </thead>
                 <tbody>
-                    {% for row in perf_compare %}
+                    {% for n in available_periods %}
                     <tr>
-                        <td>{{ row['구분'] }}</td>
-                        <td>{{ '%.2f'|format(row['BUY_hit_rate_5d']) }}</td>
-                        <td>{{ '%.2f'|format(row['BUY_avg_return_5d']) }}</td>
+                        <td><b>{{ n }}일</b></td>
+                        <td>{{ '%.2f'|format(base_res['BUY_hit_rate_' ~ n ~ 'd']) if base_res['BUY_hit_rate_' ~ n ~ 'd'] not in [None, '-', ''] else '-' }}</td>
+                        <td>{{ '%.2f'|format(best_row['BUY_hit_rate_' ~ n ~ 'd']) if best_row['BUY_hit_rate_' ~ n ~ 'd'] not in [None, '-', ''] else '-' }}</td>
+                        <td>{{ '%.2f'|format(base_res['BUY_avg_return_' ~ n ~ 'd']) if base_res['BUY_avg_return_' ~ n ~ 'd'] not in [None, '-', ''] else '-' }}</td>
+                        <td>{{ '%.2f'|format(best_row['BUY_avg_return_' ~ n ~ 'd']) if best_row['BUY_avg_return_' ~ n ~ 'd'] not in [None, '-', ''] else '-' }}</td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -151,12 +159,14 @@
             <div class="card-body">
                 <b>가중치 조합:</b>
                 <ul>
-                {% for k, v in best_row.items() if k not in ['BUY_hit_rate_5d','BUY_avg_return_5d'] %}
-                    <li>{{ k }}: {{ '%.2f'|format(v) }}</li>
+                {% for k, v in best_row.items() if not k.startswith('BUY_hit_rate_') and not k.startswith('BUY_avg_return_') %}
+                    <li>{{ k }}: {{ '%.2f'|format(v) if v is number else v }}</li>
                 {% endfor %}
                 </ul>
-                <b>5일 BUY 적중률:</b> {{ '%.2f'|format(best_row['BUY_hit_rate_5d']) }}%<br>
-                <b>5일 BUY 평균수익률:</b> {{ '%.2f'|format(best_row['BUY_avg_return_5d']) }}%
+                {% for n in available_periods %}
+                <b>{{ n }}일 BUY 적중률:</b> {{ best_row['BUY_hit_rate_' ~ n ~ 'd'] if best_row['BUY_hit_rate_' ~ n ~ 'd'] != None else '-' }}%<br>
+                <b>{{ n }}일 BUY 평균수익률:</b> {{ best_row['BUY_avg_return_' ~ n ~ 'd'] if best_row['BUY_avg_return_' ~ n ~ 'd'] != None else '-' }}%<br>
+                {% endfor %}
             </div>
         </div>
         {% else %}

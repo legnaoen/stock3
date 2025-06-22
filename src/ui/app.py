@@ -1271,6 +1271,7 @@ def theme_momentum_analysis(theme_id):
 def momentum_optimization():
     import numpy as np
     import sqlite3
+    import pandas as pd
     csv_path = os.path.join(os.path.dirname(__file__), '../../results/optimized_momentum_weights.csv')
     db_path = os.path.join(os.path.dirname(__file__), '../../db/theme_industry.db')
     meta = {}
@@ -1279,6 +1280,7 @@ def momentum_optimization():
     table = ''
     weight_compare = []
     perf_compare = []
+    available_periods = []
     # 1. 데이터 구간 추출
     try:
         with sqlite3.connect(db_path) as conn:
@@ -1296,7 +1298,7 @@ def momentum_optimization():
         df = pd.read_csv(csv_path)
         # 2. 메타데이터
         meta['조합수'] = len(df)
-        meta['사용 지표'] = [col for col in df.columns if col not in ['BUY_hit_rate_5d','BUY_avg_return_5d']]
+        meta['사용 지표'] = [col for col in df.columns if not col.startswith('BUY_hit_rate_') and not col.startswith('BUY_avg_return_')]
         try:
             import datetime
             ctime = datetime.datetime.fromtimestamp(os.path.getctime(csv_path)).strftime('%Y-%m-%d')
@@ -1304,7 +1306,8 @@ def momentum_optimization():
         except:
             meta['실험일'] = '-'
         # 3. 최고 성과 조합
-        df_sorted = df.sort_values(by='BUY_hit_rate_5d', ascending=False)
+        sort_col = 'BUY_hit_rate_5d' if 'BUY_hit_rate_5d' in df.columns else df.columns[-2]
+        df_sorted = df.sort_values(by=sort_col, ascending=False)
         best_row = df_sorted.iloc[0].to_dict()
         # 4. 상위 5개 조합
         top_rows = df_sorted.head(5).to_dict(orient='records')
@@ -1314,21 +1317,59 @@ def momentum_optimization():
             base = 1.0/len(factors_base) if k in factors_base else 0.0
             best = best_row.get(k, 0.0)
             weight_compare.append({'지표': k, '현재': base, '추천': best})
-        # 6. 성과 비교
+        # 6. 실제 존재하는 기간만 추출
+        available_periods = []
+        for col in df.columns:
+            if col.startswith('BUY_hit_rate_') and col.endswith('d'):
+                n = col.replace('BUY_hit_rate_','').replace('d','')
+                if n.isdigit():
+                    available_periods.append(int(n))
+        available_periods = sorted(set(available_periods))
+        # 7. 성과 비교 (여러 기간 안전하게)
         from backtest_momentum_strategy import run_backtest_with_weights
         base_weights = {k: 1.0/len(factors_base) if k in factors_base else 0.0 for k in meta['사용 지표']}
-        base_res = run_backtest_with_weights(base_weights)
-        best_res = {'BUY_hit_rate_5d': best_row['BUY_hit_rate_5d'], 'BUY_avg_return_5d': best_row['BUY_avg_return_5d']}
-        perf_compare = [
-            {'구분': '현재', 'BUY_hit_rate_5d': base_res.get('BUY_hit_rate_5d', 0), 'BUY_avg_return_5d': base_res.get('BUY_avg_return_5d', 0)},
-            {'구분': '추천', 'BUY_hit_rate_5d': best_res['BUY_hit_rate_5d'], 'BUY_avg_return_5d': best_res['BUY_avg_return_5d']}
-        ]
-        # 7. 전체 표(선택)
+        base_res = run_backtest_with_weights(base_weights, periods=available_periods)
+        perf_compare = []
+        for n in available_periods:
+            perf_compare.append({
+                '구분': '현재',
+                f'BUY_hit_rate_{n}d': base_res.get(f'BUY_hit_rate_{n}d', '-'),
+                f'BUY_avg_return_{n}d': base_res.get(f'BUY_avg_return_{n}d', '-'),
+                '기간': n
+            })
+            perf_compare.append({
+                '구분': '추천',
+                f'BUY_hit_rate_{n}d': best_row.get(f'BUY_hit_rate_{n}d', '-'),
+                f'BUY_avg_return_{n}d': best_row.get(f'BUY_avg_return_{n}d', '-'),
+                '기간': n
+            })
+        # 8. 전체 표(선택)
         table = df_sorted.to_html(classes='table table-striped', index=False, border=0)
     else:
         table = '<p>최적화 결과 파일이 없습니다.</p>'
+    # --- 성과 비교 데이터 Transpose (기간별 행, 구분별 열) ---
+    # 예시: perf_compare = [{'구분': '현재', ...}, {'구분': '추천', ...}]
+    if perf_compare and len(perf_compare) > 0:
+        # 모든 row의 key를 합쳐서 기간 추출
+        all_keys = set()
+        for row in perf_compare:
+            all_keys.update(row.keys())
+        period_keys = [k for k in all_keys if k.startswith('BUY_hit_rate_')]
+        periods = [int(k.split('_')[-1].replace('d','')) for k in period_keys]
+        periods = sorted(periods)
+        transposed = []
+        for n in periods:
+            row = {'기간': f'{n}일'}
+            for g in ['현재','추천']:
+                match = next((r for r in perf_compare if r.get('구분')==g), None)
+                row[f'{g}_BUY_hit_rate'] = match.get(f'BUY_hit_rate_{n}d','-') if match else '-'
+                row[f'{g}_BUY_avg_return'] = match.get(f'BUY_avg_return_{n}d','-') if match else '-'
+            transposed.append(row)
+        perf_compare_transposed = transposed
+    else:
+        perf_compare_transposed = []
     running = request.args.get('running', '0') == '1'
-    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare, running=running)
+    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare_transposed, running=running, available_periods=available_periods, base_res=base_res)
 
 @app.route('/momentum-optimization/run', methods=['POST'])
 def run_momentum_optimization():
