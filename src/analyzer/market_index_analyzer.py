@@ -7,6 +7,8 @@ import sqlite3
 # - 목적: 지수 데이터에서 1/3/5/10/20일 모멘텀 계산 및 DB 저장
 # - 사용법: calc_index_momentum, save_index_momentum_to_db 함수 활용
 
+# [구조] market_index_daily 테이블에 지수 모멘텀을 저장하지만, 업종/테마 분석/투자의견 산출에는 직접 사용되지 않음
+
 def calc_index_momentum(df):
     """
     일별 지수 데이터에서 1/3/5/10/20일 모멘텀(수익률, %) 컬럼을 계산해 반환

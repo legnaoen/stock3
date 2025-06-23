@@ -11,6 +11,7 @@
 - 확장: 신호/지표/가중치 추가, 머신러닝 기반 신호 생성 등
 """
 import numpy as np
+from src.analyzer.trend_score_utils import calc_trend_score, score_to_opinion
 
 class MomentumSignalGenerator:
     def __init__(self, weights):
@@ -24,21 +25,11 @@ class MomentumSignalGenerator:
         row: dict 또는 pandas.Series (모멘텀/지표 값)
         return: float (가중합 종합점수)
         """
-        score = 0.0
-        for k, w in self.weights.items():
-            v = row.get(k, 0) if isinstance(row, dict) else getattr(row, k, 0)
-            if v is not None and np.isfinite(v):
-                score += w * v
-        return score
+        return calc_trend_score(row, self.weights)
 
-    def get_opinion(self, score, buy_th=10, sell_th=-10):
+    def get_opinion(self, score, buy_th=None, sell_th=None):
         """
-        score: float, buy_th/sell_th: 임계값
+        score: float
         return: str (매수/보유/매도)
         """
-        if score >= buy_th:
-            return 'BUY'
-        elif score <= sell_th:
-            return 'SELL'
-        else:
-            return 'HOLD' 
+        return score_to_opinion(score) 

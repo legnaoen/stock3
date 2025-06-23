@@ -11,6 +11,68 @@ import pandas as pd
 from src.analyzer.momentum_signal_generator import MomentumSignalGenerator
 from collections import defaultdict
 import numpy as np
+from src.analyzer.trend_score_utils import calc_trend_score, normalize_score, score_to_opinion
+
+def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[1,3,5,10]):
+    """
+    주어진 가중치(weights)로 신호 생성~백테스트~성과 집계를 한 번에 실행
+    반환: 주요 성과 dict (예: {'buy_hit_rate': xx, 'buy_avg_return': xx, ...})
+    """
+    import pandas as pd
+    import numpy as np
+    from src.analyzer.momentum_signal_generator import MomentumSignalGenerator
+    import sqlite3
+
+    signal_stats = {op: {n: {'count':0, 'hit':0, 'sum_ret':0} for n in periods} for op in ['BUY','SELL','HOLD']}
+    all_results = []
+    with sqlite3.connect(db_path) as conn:
+        df_ids = pd.read_sql_query("SELECT DISTINCT target_id, target_type FROM momentum_analysis", conn)
+        generator = MomentumSignalGenerator(weights)
+        for _, row in df_ids.iterrows():
+            target_id, target_type = row['target_id'], row['target_type']
+            df = pd.read_sql_query(
+                "SELECT date, price_momentum_1d, price_momentum_3d, price_momentum_5d, price_momentum_10d, rsi_value FROM momentum_analysis WHERE target_id = ? AND target_type = ? ORDER BY date ASC",
+                conn, params=[target_id, target_type])
+            if len(df) < 30:
+                continue
+            # 1. raw score 계산
+            df['score_raw'] = df.apply(lambda row: calc_trend_score(row, weights), axis=1)
+            # 2. 0~100 정규화
+            min_val = df['score_raw'].min()
+            max_val = df['score_raw'].max()
+            df['score'] = df['score_raw'].apply(lambda x: normalize_score(x, min_val, max_val))
+            # 3. opinion 변환
+            df['opinion'] = df['score'].apply(score_to_opinion)
+            for n in periods:
+                df[f'return_{n}d'] = df.get(f'price_momentum_{n}d', 0)
+            for op in ['BUY','SELL','HOLD']:
+                mask = df['opinion'] == op
+                cnt = mask.sum()
+                if cnt == 0:
+                    continue
+                for n in periods:
+                    rets = df.loc[mask, f'return_{n}d']
+                    avg_ret = rets.mean()
+                    if op == 'BUY':
+                        hit = (rets > 0).sum()
+                    elif op == 'SELL':
+                        hit = (rets < 0).sum()
+                    else:
+                        hit = (rets > 0).sum()  # HOLD는 참고용
+                    signal_stats[op][n]['count'] += cnt
+                    signal_stats[op][n]['hit'] += hit
+                    signal_stats[op][n]['sum_ret'] += avg_ret * cnt if not pd.isna(avg_ret) else 0
+    # 주요 성과 요약 dict
+    result = {}
+    for op in ['BUY','SELL','HOLD']:
+        for n in periods:
+            cnt = signal_stats[op][n]['count']
+            avg_ret = signal_stats[op][n]['sum_ret'] / cnt if cnt else np.nan
+            hit_rate = signal_stats[op][n]['hit'] / cnt * 100 if cnt else np.nan
+            result[f'{op}_hit_rate_{n}d'] = hit_rate
+            result[f'{op}_avg_return_{n}d'] = avg_ret
+    result['all_results'] = all_results  # 상세 결과 필요시
+    return result
 
 if __name__ == "__main__":
     DB_PATH = 'db/theme_industry.db'
@@ -22,60 +84,20 @@ if __name__ == "__main__":
     ]
 
     RESULTS_DIR = 'results'
-    RESULTS_CSV = os.path.join(RESULTS_DIR, 'backtest_momentum_results.csv')
-
     os.makedirs(RESULTS_DIR, exist_ok=True)
+    periods = [1, 3, 5, 10, 20]
 
-    periods = [1, 3, 5, 10]
-
-    all_results = []
-    signal_stats = {op: {n: {'count':0, 'hit':0, 'sum_ret':0} for n in periods} for op in ['BUY','SELL','HOLD']}
-
-    with sqlite3.connect(DB_PATH) as conn:
-        df_ids = pd.read_sql_query("SELECT DISTINCT target_id, target_type FROM momentum_analysis", conn)
-        for weights in weight_sets:
-            generator = MomentumSignalGenerator(weights)
-            for _, row in df_ids.iterrows():
-                target_id, target_type = row['target_id'], row['target_type']
-                df = pd.read_sql_query(
-                    "SELECT date, price_momentum_1d, price_momentum_3d, price_momentum_5d, price_momentum_10d, rsi_value FROM momentum_analysis WHERE target_id = ? AND target_type = ? ORDER BY date ASC",
-                    conn, params=(target_id, target_type))
-                if len(df) < 30:
-                    continue
-                df['score'] = df.apply(generator.calc_score, axis=1)
-                df['opinion'] = df['score'].apply(generator.get_opinion)
-                for n in periods:
-                    df[f'return_{n}d'] = df[f'price_momentum_{n}d']
-                for op in ['BUY','SELL','HOLD']:
-                    mask = df['opinion'] == op
-                    cnt = mask.sum()
-                    if cnt == 0:
-                        continue
-                    for n in periods:
-                        rets = df.loc[mask, f'return_{n}d']
-                        avg_ret = rets.mean()
-                        if op == 'BUY':
-                            hit = (rets > 0).sum()
-                        elif op == 'SELL':
-                            hit = (rets < 0).sum()
-                        else:
-                            hit = (rets > 0).sum()  # HOLD는 참고용
-                        signal_stats[op][n]['count'] += cnt
-                        signal_stats[op][n]['hit'] += hit
-                        signal_stats[op][n]['sum_ret'] += avg_ret * cnt if not pd.isna(avg_ret) else 0
-                    all_results.append({
-                        'target_type': target_type,
-                        'target_id': target_id,
-                        'weights': str(weights),
-                        'signal': op,
-                        'count': cnt,
-                        'avg_5d_momentum': df.loc[mask, 'return_5d'].mean(),
-                        'hit_rate': ((df.loc[mask, 'return_5d'] > 0).sum() / cnt * 100) if op=='BUY' else ((df.loc[mask, 'return_5d'] < 0).sum() / cnt * 100) if op=='SELL' else ((df.loc[mask, 'return_5d'] > 0).sum() / cnt * 100)
-                    })
-
-    # CSV 저장
-    pd.DataFrame(all_results).to_csv(RESULTS_CSV, index=False)
-    print(f"\n[CSV 저장 완료] {RESULTS_CSV}")
+    # 여러 기간 BUY 성과만 기록
+    opt_results = []
+    for weights in weight_sets:
+        res = run_backtest_with_weights(weights, db_path=DB_PATH, periods=periods)
+        row = {**weights}
+        for n in periods:
+            row[f'BUY_hit_rate_{n}d'] = res.get(f'BUY_hit_rate_{n}d', None)
+            row[f'BUY_avg_return_{n}d'] = res.get(f'BUY_avg_return_{n}d', None)
+        opt_results.append(row)
+    pd.DataFrame(opt_results).to_csv('results/optimized_momentum_weights.csv', index=False)
+    print(f"\n[CSV 저장 완료] results/optimized_momentum_weights.csv")
 
     # 신호별/기간별 요약 표 생성
     rows = []
@@ -245,70 +267,6 @@ if __name__ == "__main__":
                 print("\n[전략 참고] 시장 모멘텀이 양수일 때만 매수 시 전체 적중률: (데이터 없음)")
         else:
             print("\n[전략 참고] 시장 모멘텀이 양수일 때만 매수 시 전체 적중률: (데이터 없음)")
-
-def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[1,3,5,10]):
-    """
-    주어진 가중치(weights)로 신호 생성~백테스트~성과 집계를 한 번에 실행
-    반환: 주요 성과 dict (예: {'buy_hit_rate': xx, 'buy_avg_return': xx, ...})
-    """
-    import pandas as pd
-    import numpy as np
-    from src.analyzer.momentum_signal_generator import MomentumSignalGenerator
-    import sqlite3
-
-    signal_stats = {op: {n: {'count':0, 'hit':0, 'sum_ret':0} for n in periods} for op in ['BUY','SELL','HOLD']}
-    all_results = []
-    with sqlite3.connect(db_path) as conn:
-        df_ids = pd.read_sql_query("SELECT DISTINCT target_id, target_type FROM momentum_analysis", conn)
-        generator = MomentumSignalGenerator(weights)
-        for _, row in df_ids.iterrows():
-            target_id, target_type = row['target_id'], row['target_type']
-            df = pd.read_sql_query(
-                "SELECT date, price_momentum_1d, price_momentum_3d, price_momentum_5d, price_momentum_10d, rsi_value FROM momentum_analysis WHERE target_id = ? AND target_type = ? ORDER BY date ASC",
-                conn, params=(target_id, target_type))
-            if len(df) < 30:
-                continue
-            df['score'] = df.apply(generator.calc_score, axis=1)
-            df['opinion'] = df['score'].apply(generator.get_opinion)
-            for n in periods:
-                df[f'return_{n}d'] = df[f'price_momentum_{n}d']
-            for op in ['BUY','SELL','HOLD']:
-                mask = df['opinion'] == op
-                cnt = mask.sum()
-                if cnt == 0:
-                    continue
-                for n in periods:
-                    rets = df.loc[mask, f'return_{n}d']
-                    avg_ret = rets.mean()
-                    if op == 'BUY':
-                        hit = (rets > 0).sum()
-                    elif op == 'SELL':
-                        hit = (rets < 0).sum()
-                    else:
-                        hit = (rets > 0).sum()  # HOLD는 참고용
-                    signal_stats[op][n]['count'] += cnt
-                    signal_stats[op][n]['hit'] += hit
-                    signal_stats[op][n]['sum_ret'] += avg_ret * cnt if not pd.isna(avg_ret) else 0
-                all_results.append({
-                    'target_type': target_type,
-                    'target_id': target_id,
-                    'weights': str(weights),
-                    'signal': op,
-                    'count': cnt,
-                    'avg_5d_momentum': df.loc[mask, 'return_5d'].mean(),
-                    'hit_rate': ((df.loc[mask, 'return_5d'] > 0).sum() / cnt * 100) if op=='BUY' else ((df.loc[mask, 'return_5d'] < 0).sum() / cnt * 100) if op=='SELL' else ((df.loc[mask, 'return_5d'] > 0).sum() / cnt * 100)
-                })
-    # 주요 성과 요약 dict
-    result = {}
-    for op in ['BUY','SELL','HOLD']:
-        for n in periods:
-            cnt = signal_stats[op][n]['count']
-            avg_ret = signal_stats[op][n]['sum_ret'] / cnt if cnt else np.nan
-            hit_rate = signal_stats[op][n]['hit'] / cnt * 100 if cnt else np.nan
-            result[f'{op}_hit_rate_{n}d'] = hit_rate
-            result[f'{op}_avg_return_{n}d'] = avg_ret
-    result['all_results'] = all_results  # 상세 결과 필요시
-    return result 
 
 def generate_weight_combinations(factors, step=0.1, tolerance=0.01):
     """

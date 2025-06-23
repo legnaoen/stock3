@@ -1,6 +1,7 @@
 # 시장지수(KOSPI/KOSDAQ) 데이터 수집 및 모멘텀 계산/DB 저장 스크립트
 # - 목적: momentum_analysis의 날짜 범위에 맞춰 시장지수(코스피/코스닥) 데이터를 수집하고, 모멘텀을 계산해 DB에 저장
 # - 사용법: python scripts/collect_market_index.py
+# [구조] market_index_daily 테이블에 지수 모멘텀을 저장하지만, 업종/테마 분석/투자의견 산출에는 직접 사용되지 않음
 import sys, os
 import sqlite3
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))

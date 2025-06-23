@@ -15,6 +15,7 @@ import pandas as pd
 import numpy as np
 import subprocess
 from scripts.optimize_momentum_weights import factors_base, factors_optional
+from scripts.update_active_weights import apply_recommended_weights
 
 app = Flask(__name__)
 app.secret_key = 'momentum-2025-dev-key'
@@ -30,7 +31,18 @@ last_industry_refresh = {'date': None}
 @app.route('/')
 def index():
     market_status = get_market_status()
-    return render_template('index.html', market_status=market_status)
+    # 실제 적용된 가중치(최신, is_active=1 row) 읽기
+    try:
+        df_active = pd.read_csv(os.path.join(os.path.dirname(__file__), '../../results/momentum_weights_active.csv'))
+        df_active['is_active'] = df_active['is_active'].astype(int)
+        row_active = df_active[df_active['is_active'] == 1]
+        if not row_active.empty:
+            active_weights = row_active.iloc[-1].to_dict()
+        else:
+            active_weights = {}
+    except Exception:
+        active_weights = {}
+    return render_template('index.html', market_status=market_status, active_weights=active_weights)
 
 @app.route('/sector_detail')
 def sector_detail():
@@ -617,13 +629,13 @@ def get_rebound_performance():
 def refresh_quick():
     def job():
         # 1. 기존 동작: 시세 수집
-        os.system('python3 -m src.collector.krx_collector')
+        os.system(f'"{sys.executable}" -m src.collector.krx_collector')
         # 2. 기존 동작: 주도주 분석
-        os.system('python3 -m src.analyzer.sector_theme_analyzer')
+        os.system(f'"{sys.executable}" -m src.analyzer.sector_theme_analyzer')
         # 3. 추가 동작: 모멘텀 지표 계산
-        os.system('python3 -m src.analyzer.momentum_analyzer')
+        os.system(f'"{sys.executable}" -m src.analyzer.momentum_analyzer')
         # 4. 추가 동작: 최종 투자 의견 생성
-        os.system('python3 -m src.analyzer.investment_analyzer')
+        os.system(f'"{sys.executable}" -m src.analyzer.investment_analyzer')
 
     threading.Thread(target=job).start()
     return '', 204
@@ -639,12 +651,12 @@ def refresh_full():
         if (now - last).days < 30:
             do_industry = False
     # 동기식 실행
-    os.system('python3 -m src.collector.theme_crawler')
+    os.system(f'"{sys.executable}" -m src.collector.theme_crawler')
     if do_industry:
-        os.system('python3 -m src.collector.industry_crawler')
+        os.system(f'"{sys.executable}" -m src.collector.industry_crawler')
         last_industry_refresh['date'] = today
-    os.system('python3 -m src.collector.krx_collector')
-    os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    os.system(f'"{sys.executable}" -m src.collector.krx_collector')
+    os.system(f'"{sys.executable}" -m src.analyzer.sector_theme_analyzer')
     last_full_refresh['date'] = today
     return jsonify({'last_full_refresh': last_full_refresh['date'] or '-'})
 
@@ -652,15 +664,15 @@ def refresh_full():
 def refresh_theme():
     today = datetime.now().strftime('%Y-%m-%d')
     # 동기식 실행: 실제 작업이 끝난 후 응답 반환
-    os.system('python3 -m src.collector.theme_crawler')
-    os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    os.system(f'"{sys.executable}" -m src.collector.theme_crawler')
+    os.system(f'"{sys.executable}" -m src.analyzer.sector_theme_analyzer')
     return jsonify({'last_theme_refresh': today})
 
 @app.route('/api/refresh/industry', methods=['POST'])
 def refresh_industry():
     today = datetime.now().strftime('%Y-%m-%d')
-    os.system('python3 -m src.collector.industry_crawler')
-    os.system('python3 -m src.analyzer.sector_theme_analyzer')
+    os.system(f'"{sys.executable}" -m src.collector.industry_crawler')
+    os.system(f'"{sys.executable}" -m src.analyzer.sector_theme_analyzer')
     return jsonify({'last_industry_refresh': today})
 
 @app.route('/api/sector/<sector_type>/<int:sector_id>/chart')
@@ -1329,20 +1341,21 @@ def momentum_optimization():
         from backtest_momentum_strategy import run_backtest_with_weights
         base_weights = {k: 1.0/len(factors_base) if k in factors_base else 0.0 for k in meta['사용 지표']}
         base_res = run_backtest_with_weights(base_weights, periods=available_periods)
-        perf_compare = []
+        # 추천 BUY 적중률/수익률 최대값 계산
+        def safe_float(val):
+            try:
+                return float(val)
+            except (TypeError, ValueError):
+                return float('-inf')
+        max_hit = float('-inf')
+        max_return = float('-inf')
         for n in available_periods:
-            perf_compare.append({
-                '구분': '현재',
-                f'BUY_hit_rate_{n}d': base_res.get(f'BUY_hit_rate_{n}d', '-'),
-                f'BUY_avg_return_{n}d': base_res.get(f'BUY_avg_return_{n}d', '-'),
-                '기간': n
-            })
-            perf_compare.append({
-                '구분': '추천',
-                f'BUY_hit_rate_{n}d': best_row.get(f'BUY_hit_rate_{n}d', '-'),
-                f'BUY_avg_return_{n}d': best_row.get(f'BUY_avg_return_{n}d', '-'),
-                '기간': n
-            })
+            v1 = safe_float(best_row.get(f'BUY_hit_rate_{n}d', None))
+            v2 = safe_float(best_row.get(f'BUY_avg_return_{n}d', None))
+            if v1 > max_hit:
+                max_hit = v1
+            if v2 > max_return:
+                max_return = v2
         # 8. 전체 표(선택)
         table = df_sorted.to_html(classes='table table-striped', index=False, border=0)
     else:
@@ -1368,8 +1381,15 @@ def momentum_optimization():
         perf_compare_transposed = transposed
     else:
         perf_compare_transposed = []
+    # 실제 적용된 가중치(최신, is_active=1 row) 읽기
+    try:
+        df_active = pd.read_csv(os.path.join(os.path.dirname(__file__), '../../results/momentum_weights_active.csv'))
+        row_active = df_active[df_active['is_active'] == 1].iloc[-1].to_dict()
+        active_weights = row_active
+    except Exception:
+        active_weights = None
     running = request.args.get('running', '0') == '1'
-    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare_transposed, running=running, available_periods=available_periods, base_res=base_res)
+    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare_transposed, running=running, available_periods=available_periods, base_res=base_res, max_hit=max_hit, max_return=max_return, active_weights=active_weights)
 
 @app.route('/momentum-optimization/run', methods=['POST'])
 def run_momentum_optimization():
@@ -1395,6 +1415,21 @@ def run_momentum_optimization():
     except Exception as e:
         flash(f'최적화 테스트 실행 중 오류 발생: {e}', 'danger')
     return redirect(url_for('momentum_optimization'))
+
+@app.route('/api/update_active_weights', methods=['POST'])
+def api_update_active_weights():
+    try:
+        latest_row = apply_recommended_weights()
+        return jsonify({
+            'success': True,
+            'message': '추천 가중치가 성공적으로 반영되었습니다.',
+            'applied_weights': latest_row
+        })
+    except Exception as e:
+        return jsonify({
+            'success': False,
+            'message': f'가중치 반영 중 오류: {str(e)}'
+        }), 500
 
 if __name__ == '__main__':
     app.run(debug=True, port=5001) 

@@ -71,17 +71,20 @@ def fetch_daily_stocks(date_str: str = None):
                 date_str = check_date.strftime("%Y-%m-%d")
                 break
         else:
+            logger.info("[시세수집] 최근 10일간 거래일을 찾을 수 없습니다. ValueError 발생")
             raise ValueError("최근 10일간 거래일을 찾을 수 없습니다.")
 
+    logger.info(f"[시세수집] 수집 대상 날짜: {date_str}")
     date_krx = date_str.replace("-", "")
     result = []
-
+    total_count = 0
     # KOSPI, KOSDAQ 데이터 수집
     for market in ["KOSPI", "KOSDAQ"]:
         df = stock.get_market_ohlcv(date_krx, market=market)
         cap_df = stock.get_market_cap(date_krx, market=market)
         
         if df.empty or cap_df.empty:
+            logger.info(f"[시세수집] {market} 데이터 없음 (date={date_str})")
             continue
             
         for code in df.index:
@@ -102,7 +105,9 @@ def fetch_daily_stocks(date_str: str = None):
                 'market_cap': int(cap_data['시가총액']),
                 'price_change_ratio': float(data['등락률'])
             })
-            
+        logger.info(f"[시세수집] {market} 종목 수집 완료: {len(df)}개")
+        total_count += len(df)
+    logger.info(f"[시세수집] 전체 수집 종목 수: {total_count}개 (date={date_str})")
     return result
 
 def upsert_stocks(stocks):
@@ -124,6 +129,11 @@ def upsert_stocks(stocks):
 
 def upsert_daily_stocks(daily_data):
     """일별 시세 정보 업데이트 (같은 날짜는 덮어쓰기)"""
+    if not daily_data:
+        logger.info("[DB저장] 저장할 시세 데이터가 없습니다.")
+        return
+    target_date = daily_data[0]['date'] if 'date' in daily_data[0] else 'N/A'
+    logger.info(f"[DB저장] {target_date} 시세 {len(daily_data)}개 저장 시작")
     with sqlite3.connect(DB_PATH) as conn:
         for d in daily_data:
             conn.execute(
@@ -138,6 +148,11 @@ def upsert_daily_stocks(daily_data):
                  d['market_cap'], d['price_change_ratio'])
             )
         conn.commit()
+        # 저장 후 실제 row 수 확인
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM DailyStocks WHERE date = ?", (target_date,))
+        row_count = cursor.fetchone()[0]
+        logger.info(f"[DB저장] {target_date} 기준 DB 저장 row 수: {row_count}")
 
 def get_missing_dates(stock_code, days=60):
     """특정 종목의 최근 N영업일 중 DB에 없는 날짜 리스트 반환"""
@@ -198,18 +213,16 @@ def main():
     # 전체 종목 정보 업데이트
     logger.info("전체 상장 종목 수집 중...")
     stocks = fetch_all_stocks()
-    logger.info(f"수집 종목 수: {len(stocks)}")
+    logger.info(f"전체 상장 종목 수: {len(stocks)}개")
     upsert_stocks(stocks)
-    logger.info("Stocks 테이블 업데이트 완료")
+    logger.info("종목 정보 DB 저장 완료")
     
-    # 일별 시세 정보 수집
-    logger.info("일별 시세 정보 수집 중...")
-    daily_data = fetch_daily_stocks()
-    if daily_data:
-        upsert_daily_stocks(daily_data)
-        logger.info(f"DailyStocks 테이블 업데이트 완료 (데이터 수: {len(daily_data)})")
-    else:
-        logger.warning("수집된 일별 시세 데이터가 없습니다.")
+    # 오늘 날짜 시세 수집 및 저장
+    today_str = datetime.now().strftime('%Y-%m-%d')
+    logger.info(f"오늘 날짜({today_str}) 시세 수집/저장 시작")
+    daily_data = fetch_daily_stocks(today_str)
+    upsert_daily_stocks(daily_data)
+    logger.info(f"오늘 날짜({today_str}) 시세 저장 완료")
 
 if __name__ == "__main__":
     if '--backfill' in sys.argv:

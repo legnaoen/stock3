@@ -285,6 +285,18 @@
                 <div id="recommendationData">
                     <!-- 추천 카드가 여기에 동적으로 추가됩니다 -->
                 </div>
+                {% if active_weights %}
+                <div class="mt-3" style="font-size:0.95em; color:#555;">
+                    <b>실제 적용된 가중치(최신):</b><br>
+                    {% for k, v in active_weights.items() %}
+                        {{ k }}: {{ v }}<br>
+                    {% endfor %}
+                </div>
+                {% else %}
+                <div class="mt-3" style="font-size:0.95em; color:#888;">
+                    (적용된 가중치 정보 없음)
+                </div>
+                {% endif %}
             </div>
 
             <!-- 통합 탭 -->
