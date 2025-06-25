@@ -30,6 +30,11 @@
             border-color: #dee2e6;
             cursor: not-allowed;
         }
+        .theme-chip.reverse {
+            background-color: #ffd700;
+            color: #000;
+            border-color: #ffc700;
+        }
         .theme-container {
             display: flex;
             flex-wrap: wrap;
@@ -65,35 +70,51 @@
                 {% endfor %}
                 {% for factor in meta['factors_optional'] %}
                     {% if factor == 'volume_momentum_1d' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 1일</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 1일</span>
                     {% elif factor == 'volume_momentum_3d' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 3일</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 3일</span>
                     {% elif factor == 'volume_momentum_5d' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 5일</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">거래대금 5일</span>
                     {% elif factor == 'trend_score' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">추세점수</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">추세점수</span>
                     {% elif factor == 'leader_count' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">주도주 수</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">주도주 수</span>
                     {% elif factor == 'leader_momentum' %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">주도주 평균수익률</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">주도주 평균수익률</span>
                     {% else %}
-                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" onclick="toggleFactor(this, '{{ factor }}')">{{ factor }}</span>
+                        <span class="theme-chip{% if factor in meta['selected_factors'] %} active{% endif %}" data-factor="{{ factor }}" onclick="toggleFactor(this, '{{ factor }}')">{{ factor }}</span>
                     {% endif %}
                 {% endfor %}
             </div>
-            <input type="hidden" name="selected_factors" id="selectedFactorsInput" value="{{ meta['selected_factors']|join(',') }}">
+            <input type="hidden" name="direction_dict" id="directionDictInput" value="{}">
             <button type="submit" class="btn btn-primary">최적화 테스트 실행</button>
         </form>
         <script>
+        // 3상태 칩 토글 및 direction dict 관리
+        const factorList = Array.from(document.querySelectorAll('.theme-chip[data-factor]')).map(e=>e.getAttribute('data-factor'));
+        let directionDict = {};
+        factorList.forEach(f=>directionDict[f]=0);
+        function updateDirectionInput() {
+            document.getElementById('directionDictInput').value = JSON.stringify(directionDict);
+        }
         function toggleFactor(elem, factor) {
-            elem.classList.toggle('active');
-            let selected = document.getElementById('selectedFactorsInput').value.split(',').filter(x=>x);
-            if (elem.classList.contains('active')) {
-                if (!selected.includes(factor)) selected.push(factor);
-            } else {
-                selected = selected.filter(f=>f!==factor);
-            }
-            document.getElementById('selectedFactorsInput').value = selected.join(',');
+            let state = directionDict[factor] || 0;
+            state = state === 0 ? 1 : state === 1 ? -1 : 0;
+            directionDict[factor] = state;
+            elem.classList.remove('active','reverse');
+            if(state === 1) { elem.classList.add('active'); elem.innerHTML = elem.innerText.replace(/[↑↓]/g,'') + ' ↑'; }
+            else if(state === -1) { elem.classList.add('reverse'); elem.innerHTML = elem.innerText.replace(/[↑↓]/g,'') + ' ↓'; }
+            else { elem.innerHTML = elem.innerText.replace(/[↑↓]/g,''); }
+            updateDirectionInput();
+        }
+        window.onload = function() {
+            document.querySelectorAll('.theme-chip[data-factor]').forEach(function(elem){
+                let factor = elem.getAttribute('data-factor');
+                directionDict[factor] = 0;
+                elem.classList.remove('active','reverse');
+                elem.innerHTML = elem.innerText.replace(/[↑↓]/g,'');
+            });
+            updateDirectionInput();
         }
         </script>
         {% if running %}
@@ -105,7 +126,6 @@
         <ul>
             <li><b>실험일:</b> {{ meta['실험일'] }}</li>
             <li><b>데이터 구간:</b> {{ meta['데이터 구간'] }}</li>
-            <li><b>사용 지표:</b> {{ meta['사용 지표']|join(', ') }}</li>
             <li><b>가중치 조합 수:</b> {{ meta['조합수'] }}</li>
         </ul>
         <!-- 2. 가중치 조합 비교 -->
@@ -116,14 +136,14 @@
         <div class="table-responsive">
             <table class="table table-bordered table-sm">
                 <thead>
-                    <tr><th>지표</th><th>현재 가중치</th><th>추천 가중치</th></tr>
+                    <tr><th>지표(방향)</th><th>현재 가중치</th><th>추천 가중치</th></tr>
                 </thead>
                 <tbody>
                     {% for row in weight_compare %}
                     <tr>
                         <td>{{ row['지표'] }}</td>
-                        <td>{{ '%.2f'|format(row['현재']) }}</td>
-                        <td>{{ '%.2f'|format(row['추천']) }}</td>
+                        <td {% if row['현재'] == 0 %}style="color: #bbb;"{% endif %}>{{ '%.2f'|format(row['현재']) }} <span>{% if row['현재_화살표'] %}{{ row['현재_화살표'] }}{% endif %}</span></td>
+                        <td {% if row['추천'] == 0 %}style="color: #bbb;"{% endif %}>{{ '%.2f'|format(row['추천']) }} <span>{% if row['추천_화살표'] %}{{ row['추천_화살표'] }}{% endif %}</span></td>
                     </tr>
                     {% endfor %}
                 </tbody>
@@ -273,6 +293,12 @@
         }
         </script>
         <a href="/" class="btn btn-secondary mt-3">메인으로 돌아가기</a>
+        <!-- 날짜별 추천가중치 결과표 -->
+        <hr class="mt-5">
+        <h5 class="mt-4">날짜별 추천가중치 테스트 결과</h5>
+        <div class="table-responsive">
+            {{ momentum_daily_table_html|safe }}
+        </div>
     </div>
     <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.1.3/dist/js/bootstrap.bundle.min.js"></script>
 </body>

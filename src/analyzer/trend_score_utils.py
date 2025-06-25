@@ -4,10 +4,22 @@
 import numpy as np
 
 # 1. trend_score 계산 (가장 단순: 지표×가중치 합산)
-def calc_trend_score(row, weights):
+def calc_trend_score(row, weights, direction=None):
     score = 0.0
     for k, w in weights.items():
-        score += float(row.get(k, 0.0)) * float(w)
+        dir_val = 1
+        if direction is not None:
+            dir_val = direction.get(k, 1)
+        val = row.get(k, 0.0)
+        try:
+            val = float(val)
+        except (ValueError, TypeError):
+            val = 0.0
+        try:
+            w_val = float(w)
+        except (ValueError, TypeError):
+            w_val = 0.0
+        score += val * w_val * dir_val
     return score
 
 # 2. 0~100 정규화 (min/max 입력, 값이 같으면 0)

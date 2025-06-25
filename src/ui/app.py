@@ -1,3 +1,19 @@
+"""
+src/ui/app.py
+
+[주요 기능]
+- Flask 기반 웹 UI/REST API 서버
+- 주식 시장 데이터(업종/테마/지표/가중치 등) 조회, 분석, 최적화, 리포트 제공
+- 실전/실험 가중치 관리, 최적화, 백테스트, DB 연동 등 전체 파이프라인의 UI/엔드포인트
+
+[중요사항/주의점]
+- "현재 가중치"는 momentum_weights_active.csv의 is_active=1, 최신 row에서 컬럼명 기준으로 직접 매핑
+- "추천 가중치"는 optimized_momentum_weights.csv의 best_row에서 그대로 가져옴
+- csv 파일이 없거나 row가 없을 때도 robust하게 예외처리(0.0 fallback)
+- 실전/실험 csv의 컬럼명이 다를 수 있으므로, weight_compare 생성부에서 실전 csv 헤더 기준으로 매핑
+- 이외의 기능(추천가중치, 분석, 백테스트 등)은 기존 로직을 그대로 유지
+- 경로/환경/DB 등은 os.path, try/except 등으로 안전하게 처리
+"""
 import sys
 import os
 sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '../')))
@@ -16,6 +32,7 @@ import numpy as np
 import subprocess
 from scripts.optimize_momentum_weights import factors_base, factors_optional
 from scripts.update_active_weights import apply_recommended_weights
+import json
 
 app = Flask(__name__)
 app.secret_key = 'momentum-2025-dev-key'
@@ -32,16 +49,13 @@ last_industry_refresh = {'date': None}
 def index():
     market_status = get_market_status()
     # 실제 적용된 가중치(최신, is_active=1 row) 읽기
+    active_weights = None
     try:
         df_active = pd.read_csv(os.path.join(os.path.dirname(__file__), '../../results/momentum_weights_active.csv'))
-        df_active['is_active'] = df_active['is_active'].astype(int)
-        row_active = df_active[df_active['is_active'] == 1]
-        if not row_active.empty:
-            active_weights = row_active.iloc[-1].to_dict()
-        else:
-            active_weights = {}
+        row_active = df_active[df_active['is_active'] == 1].iloc[-1].to_dict()
+        active_weights = row_active
     except Exception:
-        active_weights = {}
+        active_weights = None
     return render_template('index.html', market_status=market_status, active_weights=active_weights)
 
 @app.route('/sector_detail')
@@ -857,7 +871,6 @@ def stock_detail():
         financial_evaluation = cursor.fetchone()
         eval_details = {}
         if financial_evaluation and financial_evaluation[9]:
-            import json
             try:
                 details = json.loads(financial_evaluation[9])
                 for area in ['growth', 'profitability', 'stability', 'market_value']:
@@ -1293,6 +1306,7 @@ def momentum_optimization():
     weight_compare = []
     perf_compare = []
     available_periods = []
+    active_weights = None  # 항상 선언
     # 1. 데이터 구간 추출
     try:
         with sqlite3.connect(db_path) as conn:
@@ -1323,12 +1337,33 @@ def momentum_optimization():
         best_row = df_sorted.iloc[0].to_dict()
         # 4. 상위 5개 조합
         top_rows = df_sorted.head(5).to_dict(orient='records')
-        # 5. 현재/추천 가중치 비교
+        # 5. 현재/추천 가중치 비교 (헤더를 실전 csv에 맞춤, 안전 예외처리)
+        # - 실전 csv(momentum_weights_active.csv) 헤더(컬럼명) 기준으로만 현재 가중치 매핑
+        # - robust 예외처리: csv가 없거나 row가 없을 때도 안전하게 동작
+        # - 이 블록 외 다른 기능(추천가중치, 분석 등)에는 영향 없음
+        df_active = None
+        row_active = {}
+        try:
+            df_active = pd.read_csv(os.path.join(os.path.dirname(__file__), '../../results/momentum_weights_active.csv'))
+            row_active = df_active[df_active['is_active'] == 1].iloc[-1].to_dict()
+        except Exception:
+            pass
+        if df_active is not None:
+            weight_fields = [col for col in df_active.columns if col not in ['timestamp','tag','is_active','comment']]
+        else:
+            weight_fields = []
+        meta['사용 지표'] = weight_fields
         weight_compare = []
-        for k in meta['사용 지표']:
-            base = 1.0/len(factors_base) if k in factors_base else 0.0
+        for k in weight_fields:
+            try:
+                base = float(row_active[k]) if k in row_active else 0.0
+            except Exception:
+                base = 0.0
             best = best_row.get(k, 0.0)
-            weight_compare.append({'지표': k, '현재': base, '추천': best})
+            # 방향 정보 추출
+            base_dir = row_active.get(f"{k}_dir", 1)
+            best_dir = best_row.get(f"{k}_dir", 1)
+            weight_compare.append({'지표': k, '현재': base, '추천': best, '현재_방향': base_dir, '추천_방향': best_dir})
         # 6. 실제 존재하는 기간만 추출
         available_periods = []
         for col in df.columns:
@@ -1339,7 +1374,7 @@ def momentum_optimization():
         available_periods = sorted(set(available_periods))
         # 7. 성과 비교 (여러 기간 안전하게)
         from backtest_momentum_strategy import run_backtest_with_weights
-        base_weights = {k: 1.0/len(factors_base) if k in factors_base else 0.0 for k in meta['사용 지표']}
+        base_weights = {k: float(row_active.get(k, 0.0)) for k in weight_fields}
         base_res = run_backtest_with_weights(base_weights, periods=available_periods)
         # 추천 BUY 적중률/수익률 최대값 계산
         def safe_float(val):
@@ -1387,32 +1422,142 @@ def momentum_optimization():
         row_active = df_active[df_active['is_active'] == 1].iloc[-1].to_dict()
         active_weights = row_active
     except Exception:
-        active_weights = None
+        pass
+    # direction dict 로드 (최신 선택값, 없으면 CSV에서 *_dir 컬럼 사용)
+    direction = {}
+    if os.path.exists(csv_path):
+        df = pd.read_csv(csv_path)
+        dir_cols = {k.replace('_dir',''): int(df.iloc[0][k]) for k in df.columns if k.endswith('_dir')}
+        direction.update(dir_cols)
+    tmp_path = os.path.join(os.path.dirname(__file__), '../../selected_factors.json')
+    if os.path.exists(tmp_path):
+        try:
+            import json
+            with open(tmp_path, 'r', encoding='utf-8') as f:
+                selected = json.load(f)
+            if isinstance(selected, dict):
+                direction.update(selected)
+        except Exception:
+            pass
+    def arrow_symbol(d):
+        if d == 1:
+            return '↑'
+        elif d == -1:
+            return '↓'
+        else:
+            return ''
+    weight_compare = [
+        {'지표': row['지표'],
+         '현재': row['현재'],
+         '추천': row['추천'],
+         '현재_방향': row.get('현재_방향', 1),
+         '추천_방향': row.get('추천_방향', 1),
+         '현재_화살표': arrow_symbol(row.get('현재_방향', 1)),
+         '추천_화살표': arrow_symbol(row.get('추천_방향', 1))}
+        for row in weight_compare
+    ]
+    if best_row:
+        best_row = {k if k.startswith('BUY_hit_rate_') or k.startswith('BUY_avg_return_') else arrow_symbol(k): v for k, v in best_row.items()}
+    if top_rows:
+        top_rows = [ {k if k.startswith('BUY_hit_rate_') or k.startswith('BUY_avg_return_') else arrow_symbol(k): v for k, v in row.items()} for row in top_rows ]
     running = request.args.get('running', '0') == '1'
-    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare_transposed, running=running, available_periods=available_periods, base_res=base_res, max_hit=max_hit, max_return=max_return, active_weights=active_weights)
+    # --- 신규: 날짜별 추천가중치 결과표 2단 헤더로 생성 (Strong Buy, Buy, Hold, Sell 모두) ---
+    daily_csv_path = os.path.join(os.path.dirname(__file__), '../../results/momentum_daily_results.csv')
+    momentum_daily_table_html = ''
+    if os.path.exists(daily_csv_path):
+        df_daily = pd.read_csv(daily_csv_path)
+        if 'date' in df_daily.columns:
+            df_daily = df_daily.sort_values(by='date', ascending=False)
+        # 2단 헤더용 컬럼 그룹 정의 (네 그룹 모두, 종목 수는 5d만)
+        groups = [
+            ('Strong Buy', 'STRONG_BUY'),
+            ('Buy', 'BUY'),
+            ('Hold', 'HOLD'),
+            ('Sell', 'SELL'),
+        ]
+        periods = ['5d', '10d', '20d']
+        # sub_cols: 종목 수는 5d만, 적중률/수익률은 3개 기간 모두
+        sub_cols = [('count', '종목 수', ['5d']), ('hit_rate', '적중률', periods), ('avg_return', '수익률', periods)]
+        # 헤더 2단 구성
+        header1 = ['<th rowspan="2">날짜</th>']
+        header2 = []
+        show_cols = ['date']
+        for label, sig in groups:
+            n_sub = 1 + 2*len(periods)  # 종목수(5d) 1개 + 적중률/수익률 3*2개
+            header1.append(f'<th colspan="{n_sub}">{label} 그룹</th>')
+            # 종목 수(5d)만
+            show_cols.append(f'{sig}_count_5d')
+            header2.append('<th>종목 수(5d)</th>')
+            # 적중률/수익률(3개 기간)
+            for sub, sub_label, ps in sub_cols[1:]:
+                for p in ps:
+                    show_cols.append(f'{sig}_{sub}_{p}')
+                    header2.append(f'<th>{sub_label}({p})</th>')
+        # 데이터 추출 및 표 생성
+        df_show = df_daily[show_cols].fillna('-')
+        # --- 전체 평균 행 추가 ---
+        avg_row = {}
+        for col in show_cols:
+            if col == 'date':
+                avg_row[col] = '전체평균'
+            else:
+                vals = pd.to_numeric(df_show[col], errors='coerce')
+                if vals.notnull().sum() > 0:
+                    avg = vals.mean()
+                    # 적중률/수익률/종목수 모두 소수점 첫째자리까지
+                    avg_row[col] = f'{avg:.1f}'
+                else:
+                    avg_row[col] = '-'
+        # 평균 행을 DataFrame 맨 앞에 삽입
+        df_show = pd.concat([pd.DataFrame([avg_row]), df_show], ignore_index=True)
+        thead = f'<thead><tr>{"".join(header1)}</tr><tr>{"".join(header2)}</tr></thead>'
+        rows = []
+        for _, row in df_show.iterrows():
+            tds = [f'<td>{row[show_cols[0]]}</td>']
+            idx = 1
+            for label, sig in groups:
+                # 종목 수(5d)
+                tds.append(f'<td style="text-align:right;">{row[show_cols[idx]]}</td>')
+                idx += 1
+                # 적중률/수익률(3개 기간)
+                for sub, sub_label, ps in sub_cols[1:]:
+                    for p in ps:
+                        col = show_cols[idx]
+                        val = row[col]
+                        # hit_rate(적중률) 또는 avg_return(수익률) 셀은 소수점 첫째자리까지 표시
+                        if 'hit_rate' in col or 'avg_return' in col:
+                            try:
+                                val = float(val)
+                                val = f'{val:.1f}'
+                            except Exception:
+                                pass
+                        tds.append(f'<td style="text-align:right;">{val}</td>')
+                        idx += 1
+            rows.append(f'<tr>{"".join(tds)}</tr>')
+        tbody = f'<tbody>{"".join(rows)}</tbody>'
+        momentum_daily_table_html = f'<table class="table table-bordered table-sm">{thead}{tbody}</table>'
+    return render_template('momentum_optimization.html', meta=meta, best_row=best_row, top_rows=top_rows, table_html=table, weight_compare=weight_compare, perf_compare=perf_compare_transposed, running=running, available_periods=available_periods, base_res=base_res, max_hit=max_hit, max_return=max_return, active_weights=active_weights, momentum_daily_table_html=momentum_daily_table_html)
 
 @app.route('/momentum-optimization/run', methods=['POST'])
 def run_momentum_optimization():
-    from scripts.optimize_momentum_weights import factors_base, factors_optional
-    selected = request.form.get('selected_factors','')
-    selected_list = [f for f in selected.split(',') if f]
-    # factors_optional dict를 선택값에 맞게 True/False로 재구성
-    import importlib.util
-    import sys
-    import os
-    script_path = os.path.join(os.path.dirname(__file__), '../../scripts/optimize_momentum_weights.py')
-    spec = importlib.util.spec_from_file_location('optimize_momentum_weights', script_path)
-    omw = importlib.util.module_from_spec(spec)
-    sys.modules['optimize_momentum_weights'] = omw
-    spec.loader.exec_module(omw)
-    for k in omw.factors_optional.keys():
-        omw.factors_optional[k] = (k in selected_list)
-    # 백엔드에서 최적화 스크립트 실행
+    direction_json = request.form.get('direction_dict','{}')
+    try:
+        direction = json.loads(direction_json)
+    except Exception:
+        direction = {}
+    tmp_path = os.path.join(os.path.dirname(__file__), '../../selected_factors.json')
+    with open(tmp_path, 'w', encoding='utf-8') as f:
+        json.dump(direction, f, ensure_ascii=False)
     try:
         import subprocess
-        subprocess.run(['python', script_path], check=True)
+        import sys
+        script_path = os.path.join(os.path.dirname(__file__), '../../scripts/optimize_momentum_weights.py')
+        print('[DEBUG] 최적화 스크립트 실행 시작')
+        subprocess.run(['python', script_path], check=True, stdout=sys.stdout, stderr=sys.stderr)
+        print('[DEBUG] 최적화 스크립트 실행 완료')
         flash('최적화 테스트가 성공적으로 완료되었습니다.', 'success')
     except Exception as e:
+        print(f'[ERROR] 최적화 스크립트 실행 중 예외: {e}')
         flash(f'최적화 테스트 실행 중 오류 발생: {e}', 'danger')
     return redirect(url_for('momentum_optimization'))
 

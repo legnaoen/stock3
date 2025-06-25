@@ -21,7 +21,7 @@ class MomentumAnalyzer:
     # --- 설정(Configuration) ---
     PRICE_MOMENTUM_PERIODS = [3, 5, 10]
     VOLUME_MOMENTUM_PERIODS = [3, 5]
-    FETCH_DAYS_BUFFER = 30
+    FETCH_DAYS_BUFFER = 250
 
     def __init__(self, theme_db_path='db/theme_industry.db', master_db_path='db/stock_master.db'):
         project_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -240,13 +240,20 @@ class MomentumAnalyzer:
         print(f"--- {target_type} 모멘텀 분석 및 저장 실행 ({required_days}일치 데이터) ---")
         performance_data = self.fetch_performance_data(target_type=target_type, days=required_days)
         print(f"[analyze] performance_data shape: {performance_data.shape}")
-        if not performance_data.empty:
-            for col in ['price_change_ratio','trading_value','market_cap','leader_stock_codes']:
-                if col in performance_data.columns:
-                    print(f"[analyze] {col} 결측치: {performance_data[col].isna().mean()*100:.1f}% (샘플: {performance_data[col].head(3).tolist()})")
+        # [진단] 실제 분석 대상 target_id 분포 및 샘플 확인 및 결측치 진단
         if performance_data.empty:
             print(f"[analyze] 데이터 없음: {target_type}, days={required_days}")
             return pd.DataFrame()
+        if 'target_id' in performance_data.columns:
+            print("[analyze][진단] target_id value_counts:")
+            print(performance_data['target_id'].value_counts())
+            print("[analyze][진단] target_id-date 샘플:")
+            print(performance_data[['target_id','date']].drop_duplicates().head(10))
+        else:
+            print("[analyze][진단] target_id 컬럼이 존재하지 않습니다. columns:", performance_data.columns)
+        for col in ['price_change_ratio','trading_value','market_cap','leader_stock_codes']:
+            if col in performance_data.columns:
+                print(f"[analyze] {col} 결측치: {performance_data[col].isna().mean()*100:.1f}% (샘플: {performance_data[col].head(3).tolist()})")
         analysis_result = self.calculate_momentum_indicators(performance_data)
         print(f"[analyze] analysis_result shape: {analysis_result.shape}")
         for col in ['price_momentum_1d','price_momentum_3d','volume_momentum_1d','rsi_value','leader_count','leader_momentum']:

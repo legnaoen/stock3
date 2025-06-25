@@ -25,6 +25,7 @@ if os.name != 'nt':
 def load_weights_from_csv(csv_path='results/momentum_weights_active.csv'):
     """
     가중치 CSV(가로형)에서 is_active=1, 최신 timestamp 세트의 가중치를 딕셔너리로 반환
+    방향 컬럼이 없으면 모든 지표 방향을 1(순방향)로 자동 처리
     """
     df = pd.read_csv(csv_path)
     # is_active가 int가 아닐 경우를 대비해 변환
@@ -39,10 +40,19 @@ def load_weights_from_csv(csv_path='results/momentum_weights_active.csv'):
     if isinstance(latest_set, pd.DataFrame):
         latest_set = latest_set.iloc[0]
     # factor 컬럼만 추출
-    factor_cols = [col for col in df.columns if col not in ['timestamp','tag','is_active','comment']]
+    factor_cols = [col for col in df.columns if col not in ['timestamp','tag','is_active','comment'] and not col.endswith('_dir')]
+    # 방향 컬럼 추출 또는 자동 순방향 처리
+    direction = {}
+    for col in factor_cols:
+        dir_col = f"{col}_dir"
+        if dir_col in df.columns:
+            direction[col] = int(latest_set[dir_col])
+        else:
+            direction[col] = 1  # 방향 정보 없으면 순방향
     weights = {col: float(latest_set[col]) for col in factor_cols}
     print(f"[load_weights_from_csv] 적용 가중치: {weights}")
-    return weights
+    print(f"[load_weights_from_csv] 적용 방향: {direction}")
+    return weights, direction
 
 class InvestmentAnalyzer:
     """
@@ -96,7 +106,7 @@ class InvestmentAnalyzer:
         """
         print("[calculate_trend_score] trend_score 계산 중...")
         df.fillna(0, inplace=True)
-        weights = load_weights_from_csv()
+        weights, direction = load_weights_from_csv()
         # 1. raw score 계산 (row-wise)
         df['trend_score_raw'] = df.apply(lambda row: calc_trend_score(row, weights), axis=1)
         # 2. min/max 구해서 0~100 정규화

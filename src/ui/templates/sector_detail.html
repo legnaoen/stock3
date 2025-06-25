@@ -187,6 +187,33 @@
                         });
                         html += '</tbody></table>';
                         momDiv.innerHTML = html;
+
+                        // --- [추가] 계산식/실제값 표시 ---
+                        fetch('/results/momentum_weights_active.csv')
+                          .then(resp => resp.text())
+                          .then(csv => {
+                            const lines = csv.trim().split('\n');
+                            const headers = lines[0].split(',');
+                            const last = lines.filter(l => l.includes(',1,')).slice(-1)[0] || lines[lines.length-1];
+                            const vals = last.split(',');
+                            const w = {};
+                            headers.forEach((h,i)=>{w[h]=parseFloat(vals[i])});
+                            // 주요 지표만 추출 (가중치가 0이 아닌 것만)
+                            const keys = ['price_momentum_3d','price_momentum_5d','price_momentum_10d','volume_momentum_3d','rsi_value','leader_momentum'];
+                            let used = keys.filter(k=>momentum[k]!==undefined && !isNaN(w[k]) && w[k]!==0);
+                            let calcStr = used.map(k=>`(${Number(momentum[k]).toFixed(2)}×${w[k].toFixed(2)})`).join(' + ');
+                            let sum = used.map(k=>Number(momentum[k])*w[k]).reduce((a,b)=>a+b,0);
+                            // 정규화(예시: min=0, max=100)
+                            let min=0, max=100; // 실제 min/max는 그룹 전체에서 계산되나, 예시로 0/100
+                            let norm = ((sum-min)/(max-min)*100).toFixed(1);
+                            let wlist = used.map(k=>`${k}: ${w[k].toFixed(2)}`).join(', ');
+                            let formula = `<div style='font-size:13px;margin-top:8px;color:#555'>
+                                <b>종합 추세점수 계산식:</b> ${calcStr} = <b>${sum.toFixed(2)}</b><br/>
+                                <span style='color:#888'>(정규화: (${sum.toFixed(2)} - ${min}) / (${max} - ${min}) × 100 = <b>${norm}</b>점)</span><br/>
+                                <span style='color:#888'>[분석에 사용된 가중치: ${wlist}]</span>
+                            </div>`;
+                            momDiv.insertAdjacentHTML('beforeend', formula);
+                          });
                     } else {
                         momDiv.innerHTML = '<div class="text-muted">분석 데이터가 없습니다.</div>';
                     }

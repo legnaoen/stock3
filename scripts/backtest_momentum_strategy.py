@@ -13,30 +13,31 @@ from collections import defaultdict
 import numpy as np
 from src.analyzer.trend_score_utils import calc_trend_score, normalize_score, score_to_opinion
 
-def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[1,3,5,10]):
+def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[1,3,5,10], direction=None, table_name='momentum_analysis'):
     """
-    주어진 가중치(weights)로 신호 생성~백테스트~성과 집계를 한 번에 실행
-    반환: 주요 성과 dict (예: {'buy_hit_rate': xx, 'buy_avg_return': xx, ...})
+    주어진 가중치(weights)와 direction(지표별 방향)으로 신호 생성~백테스트~성과 집계를 한 번에 실행
+    반환: 주요 성과 dict (예: {'STRONG_BUY_avg_return_5d': xx, ...})
     """
     import pandas as pd
     import numpy as np
     from src.analyzer.momentum_signal_generator import MomentumSignalGenerator
     import sqlite3
 
-    signal_stats = {op: {n: {'count':0, 'hit':0, 'sum_ret':0} for n in periods} for op in ['BUY','SELL','HOLD']}
+    signal_types = ['STRONG_BUY', 'BUY', 'HOLD', 'SELL']
+    signal_stats = {op: {n: {'count':0, 'hit':0, 'sum_ret':0} for n in periods} for op in signal_types}
     all_results = []
     with sqlite3.connect(db_path) as conn:
-        df_ids = pd.read_sql_query("SELECT DISTINCT target_id, target_type FROM momentum_analysis", conn)
+        df_ids = pd.read_sql_query(f"SELECT DISTINCT target_id, target_type FROM {table_name}", conn)
         generator = MomentumSignalGenerator(weights)
         for _, row in df_ids.iterrows():
             target_id, target_type = row['target_id'], row['target_type']
             df = pd.read_sql_query(
-                "SELECT date, price_momentum_1d, price_momentum_3d, price_momentum_5d, price_momentum_10d, rsi_value FROM momentum_analysis WHERE target_id = ? AND target_type = ? ORDER BY date ASC",
+                f"SELECT date, price_momentum_1d, price_momentum_3d, price_momentum_5d, price_momentum_10d, rsi_value FROM {table_name} WHERE target_id = ? AND target_type = ? ORDER BY date ASC",
                 conn, params=[target_id, target_type])
             if len(df) < 30:
                 continue
             # 1. raw score 계산
-            df['score_raw'] = df.apply(lambda row: calc_trend_score(row, weights), axis=1)
+            df['score_raw'] = df.apply(lambda row: calc_trend_score(row, weights, direction=direction), axis=1)
             # 2. 0~100 정규화
             min_val = df['score_raw'].min()
             max_val = df['score_raw'].max()
@@ -45,7 +46,7 @@ def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[
             df['opinion'] = df['score'].apply(score_to_opinion)
             for n in periods:
                 df[f'return_{n}d'] = df.get(f'price_momentum_{n}d', 0)
-            for op in ['BUY','SELL','HOLD']:
+            for op in signal_types:
                 mask = df['opinion'] == op
                 cnt = mask.sum()
                 if cnt == 0:
@@ -53,7 +54,7 @@ def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[
                 for n in periods:
                     rets = df.loc[mask, f'return_{n}d']
                     avg_ret = rets.mean()
-                    if op == 'BUY':
+                    if op in ['STRONG_BUY','BUY']:
                         hit = (rets > 0).sum()
                     elif op == 'SELL':
                         hit = (rets < 0).sum()
@@ -64,11 +65,12 @@ def run_backtest_with_weights(weights, db_path='db/theme_industry.db', periods=[
                     signal_stats[op][n]['sum_ret'] += avg_ret * cnt if not pd.isna(avg_ret) else 0
     # 주요 성과 요약 dict
     result = {}
-    for op in ['BUY','SELL','HOLD']:
+    for op in signal_types:
         for n in periods:
             cnt = signal_stats[op][n]['count']
             avg_ret = signal_stats[op][n]['sum_ret'] / cnt if cnt else np.nan
             hit_rate = signal_stats[op][n]['hit'] / cnt * 100 if cnt else np.nan
+            result[f'{op}_count_{n}d'] = cnt
             result[f'{op}_hit_rate_{n}d'] = hit_rate
             result[f'{op}_avg_return_{n}d'] = avg_ret
     result['all_results'] = all_results  # 상세 결과 필요시
@@ -92,28 +94,26 @@ if __name__ == "__main__":
     for weights in weight_sets:
         res = run_backtest_with_weights(weights, db_path=DB_PATH, periods=periods)
         row = {**weights}
-        for n in periods:
-            row[f'BUY_hit_rate_{n}d'] = res.get(f'BUY_hit_rate_{n}d', None)
-            row[f'BUY_avg_return_{n}d'] = res.get(f'BUY_avg_return_{n}d', None)
+        row.update(res)  # 모든 신호별 성과를 row에 추가
         opt_results.append(row)
     pd.DataFrame(opt_results).to_csv('results/optimized_momentum_weights.csv', index=False)
     print(f"\n[CSV 저장 완료] results/optimized_momentum_weights.csv")
 
-    # 신호별/기간별 요약 표 생성
-    rows = []
-    for op in ['BUY','SELL','HOLD']:
-        row = {'신호': op, 'count': signal_stats[op][1]['count']}
-        for n in periods:
-            cnt = signal_stats[op][n]['count']
-            avg_ret = signal_stats[op][n]['sum_ret'] / cnt if cnt else np.nan
-            hit_rate = signal_stats[op][n]['hit'] / cnt * 100 if cnt else np.nan
-            row[f'{n}d_평균수익'] = round(avg_ret,2) if not np.isnan(avg_ret) else '-'
-            row[f'{n}d_적중률'] = f"{hit_rate:.2f}%" if not np.isnan(hit_rate) else '-'
-        rows.append(row)
+    # 신호별/기간별 요약 표 생성 (불필요하므로 주석 처리)
+    # rows = []
+    # for op in ['BUY','SELL','HOLD']:
+    #     row = {'신호': op, 'count': signal_stats[op][1]['count']}
+    #     for n in periods:
+    #         cnt = signal_stats[op][n]['count']
+    #         avg_ret = signal_stats[op][n]['sum_ret'] / cnt if cnt else np.nan
+    #         hit_rate = signal_stats[op][n]['hit'] / cnt * 100 if cnt else np.nan
+    #         row[f'{n}d_평균수익'] = round(avg_ret,2) if not np.isnan(avg_ret) else '-'
+    #         row[f'{n}d_적중률'] = f"{hit_rate:.2f}%" if not np.isnan(hit_rate) else '-'
+    #     rows.append(row)
 
-    summary_df = pd.DataFrame(rows)
-    print("\n[신호별 기간별 평균 수익률/적중률 요약]")
-    print(summary_df.to_string(index=False))
+    # summary_df = pd.DataFrame(rows)
+    # print("\n[신호별 기간별 평균 수익률/적중률 요약]")
+    # print(summary_df.to_string(index=False))
 
     """
     실제 사용자에게 노출되는 investment_opinion 테이블의 opinion_type(STRONG_BUY, BUY, HOLD, SELL) 기준으로

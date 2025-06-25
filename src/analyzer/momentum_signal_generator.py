@@ -20,12 +20,13 @@ class MomentumSignalGenerator:
         """
         self.weights = weights
 
-    def calc_score(self, row):
+    def calc_score(self, row, direction=None):
         """
         row: dict 또는 pandas.Series (모멘텀/지표 값)
+        direction: dict, 예) {'price_momentum_3d': 1, 'rsi_value': -1, ...}
         return: float (가중합 종합점수)
         """
-        return calc_trend_score(row, self.weights)
+        return calc_trend_score(row, self.weights, direction=direction)
 
     def get_opinion(self, score, buy_th=None, sell_th=None):
         """
